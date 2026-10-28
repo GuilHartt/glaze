@@ -1,0 +1,4 @@
+# Odin build output
+*.exe
+*.obj
+*.pdb
