@@ -34,6 +34,11 @@ element declared, and `PushId`/`PopId` open a scope when a subtree needs its own
 namespace. The id that `Label` and `Image` return is only needed to target an
 element other than the last one.
 
+Lato Regular is embedded in the library, so `Label` renders with no setup at all.
+More fonts come from `AddFontData` or `AddFontFile`, and `MergeFont` makes a second
+font supply the glyphs the first one lacks, which is how an icon font joins a text
+font. The embedded font is under the SIL Open Font License, see `ui/fonts/OFL.txt`.
+
 ## Usage
 
 The host program owns the window and the frame loop. Each frame it hands the frame

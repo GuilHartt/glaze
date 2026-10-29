@@ -3,8 +3,9 @@
 // state, and Render draws the command list the engine produced.
 package raylib_backend
 
-import ui "../../ui"
 import rl "vendor:raylib"
+import rlgl "vendor:raylib/rlgl"
+import ui "../../ui"
 
 // Setup binds raylib's default font and clipboard to the engine. Call it once,
 // after the window exists and before the first frame.
@@ -14,8 +15,6 @@ Setup :: proc() {
 			assert(KEY_MAP[key] != .KEY_NULL, "raylib_backend: every ui.Key needs an entry in KEY_MAP")
 		}
 	}
-	font = rl.GetFontDefault()
-	ui.SetMeasureText(measure_text)
 	ui.BindClipboard(clipboard_get, clipboard_set)
 }
 
@@ -37,57 +36,87 @@ Update :: proc() {
 		ui.AddKey(key, rl.IsKeyDown(KEY_MAP[key]))
 	}
 	for ch := rl.GetCharPressed(); ch != 0; ch = rl.GetCharPressed() {
-		ui.AddTextRune(ch)
+		ui.AddTypedRune(ch)
+	}
+}
+
+@(private="file")
+atlas: rl.Texture2D
+
+// sync_atlas uploads the glyph atlas whenever the engine changed it. The atlas is
+// one byte of coverage per texel, so it goes up as opaque white with that coverage
+// as alpha, which is what the default shader multiplies by the vertex color.
+@(private="file")
+sync_atlas :: proc() {
+	pixels, width, height := ui.FontAtlas()
+	if width == 0 || height == 0 do return
+
+	changed := ui.TakeAtlasUpdate()
+	resized := atlas.id == 0 || int(atlas.width) != width || int(atlas.height) != height
+	if !changed && !resized do return
+
+	rgba := make([]u8, width * height * 4)
+	defer delete(rgba)
+	for i in 0 ..< width * height {
+		rgba[i * 4 + 0] = 255
+		rgba[i * 4 + 1] = 255
+		rgba[i * 4 + 2] = 255
+		rgba[i * 4 + 3] = pixels[i]
+	}
+
+	image := rl.Image{
+		data    = raw_data(rgba),
+		width   = i32(width),
+		height  = i32(height),
+		mipmaps = 1,
+		format  = .UNCOMPRESSED_R8G8B8A8,
+	}
+
+	if resized {
+		if atlas.id != 0 do rl.UnloadTexture(atlas)
+		atlas = rl.LoadTextureFromImage(image)
+		ui.SetAtlasTexture(ui.Texture(&atlas))
+	} else {
+		rl.UpdateTexture(atlas, raw_data(rgba))
 	}
 }
 
 // Render draws the commands produced by the last frame. Call it once per frame,
 // after ui.End.
 Render :: proc() {
-	for cmd in ui.DrawData() {
-		switch c in cmd {
-		case ui.CommandRect:
-			bounds := to_rect(c.Bounds)
-			round := roundness(c.Radius, c.Bounds)
-			if c.Color.a != 0 {
-				rl.DrawRectangleRounded(bounds, round, ROUND_SEGMENTS, rl.Color(c.Color))
-			}
-			if c.Border.Width > 0 {
-				rl.DrawRectangleRoundedLinesEx(bounds, round, ROUND_SEGMENTS, c.Border.Width, rl.Color(c.Border.Color))
-			}
-		case ui.CommandText:
-			size := c.Size
-			if size <= 0 do size = f32(font.baseSize)
-			rl.DrawTextEx(font, c.Text, {c.Bounds.x, c.Bounds.y}, size, size * LETTER_SPACING, rl.Color(c.Color))
-		case ui.CommandImage:
-			texture := (^rl.Texture2D)(c.Handle)^
-			source := rl.Rectangle{0, 0, f32(texture.width), f32(texture.height)}
-			rl.DrawTexturePro(texture, source, to_rect(c.Bounds), {}, 0, rl.Color(c.Tint))
+	sync_atlas()
+	
+	rlgl.DrawRenderBatchActive()
+	rlgl.DisableBackfaceCulling()
+
+	frame := ui.DrawData()
+	for cmd in frame.Commands {
+		rlgl.SetTexture(texture_id(cmd.Texture))
+		rlgl.Begin(rlgl.TRIANGLES)
+		for i in cmd.Offset ..< cmd.Offset + cmd.Count {
+			v := frame.Vertices[frame.Indices[i]]
+			rlgl.Color4ub(v.Color.r, v.Color.g, v.Color.b, v.Color.a)
+			rlgl.TexCoord2f(v.UV.x, v.UV.y)
+			rlgl.Vertex2f(v.Pos.x, v.Pos.y)
 		}
+		rlgl.End()
 	}
+
+	// The batch must be flushed while culling is still off: the engine's winding
+	// is the opposite of raylib's, so flushing after the restore would drop all of
+	// it.
+	rlgl.DrawRenderBatchActive()
+	rlgl.SetTexture(u32(rlgl.GetTextureIdDefault()))
+	rlgl.EnableBackfaceCulling()
 }
 
-// to_rect converts an engine rect into a raylib rectangle.
+// texture_id turns an engine texture handle into the GL id rlgl expects. A zero
+// handle gets raylib's 1x1 white texture, because texture 0 samples nothing and
+// comes back black.
 @(private="file")
-to_rect :: #force_inline proc "contextless" (R: ui.Rect) -> rl.Rectangle {
-	return {R.x, R.y, R.w, R.h}
-}
-
-// roundness converts a corner radius into raylib's 0..1 roundness, measured
-// against the shortest side of the rect.
-@(private="file")
-roundness :: #force_inline proc "contextless" (Radius: f32, R: ui.Rect) -> f32 {
-	half := min(R.w, R.h) / 2
-	if half <= 0 do return 0
-	return clamp(Radius / half, 0, 1)
-}
-
-@(private="file")
-measure_text :: proc(Text: cstring, Config: ui.TextConfig, User: rawptr) -> ui.Vec2 {
-	size := Config.Size
-	if size <= 0 do size = f32(font.baseSize)
-	measured := rl.MeasureTextEx(font, Text, size, size * LETTER_SPACING)
-	return {measured.x, measured.y}
+texture_id :: #force_inline proc "contextless" (T: ui.Texture) -> u32 {
+	if T == nil do return u32(rlgl.GetTextureIdDefault())
+	return (^rl.Texture2D)(rawptr(T)).id
 }
 
 @(private="file")
@@ -99,17 +128,6 @@ clipboard_get :: proc(User: rawptr) -> cstring {
 clipboard_set :: proc(Text: cstring, User: rawptr) {
 	rl.SetClipboardText(Text)
 }
-
-@(private="file")
-font: rl.Font
-
-@(private="file")
-ROUND_SEGMENTS :: 8
-
-// LETTER_SPACING is the gap between glyphs as a fraction of the font size, which
-// is how raylib's DrawText spaces them.
-@(private="file")
-LETTER_SPACING :: 0.1
 
 // KEY_MAP maps each engine key to the raylib key that produces it. Every ui.Key
 // needs an entry: a missing one stays zero and the key goes dead.

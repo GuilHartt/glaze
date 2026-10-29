@@ -161,18 +161,18 @@ AddKey :: proc(Key: Key, Down: bool) {
 	}
 }
 
-// AddText feeds text typed this frame. Append per character/commit event; the
-// backend must pass it already decoded to UTF-8.
-AddText :: proc(Text: cstring) {
+// AddTypedText feeds text typed this frame. Append per character/commit event;
+// the backend must pass it already decoded to UTF-8.
+AddTypedText :: proc(Text: cstring) {
 	if Text == nil do return
 	drop_terminator()
 	append(&input.Text, ..(transmute([^]u8)Text)[0:len(Text)])
 	append(&input.Text, 0)
 }
 
-// AddTextRune feeds a single typed character. Use it when the backend reports
+// AddTypedRune feeds a single typed character. Use it when the backend reports
 // input as Unicode code points (e.g. raylib's GetCharPressed).
-AddTextRune :: proc(R: rune) {
+AddTypedRune :: proc(R: rune) {
 	drop_terminator()
 	buf, n := utf8.encode_rune(R)
 	append(&input.Text, ..buf[:n])

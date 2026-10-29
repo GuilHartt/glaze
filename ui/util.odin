@@ -6,6 +6,17 @@ import "core:math"
 // the left and right and `Y` on the top and bottom.
 Pad :: proc{pad_all, pad_xy}
 
+// Rounding holds the radius of each corner, so one rectangle can round its corners
+// independently.
+Rounding :: struct {
+	TopLeft, TopRight, BottomRight, BottomLeft: f32,
+}
+
+// Round returns a rounding with `All` on every corner.
+Round :: #force_inline proc "contextless" (All: f32) -> Rounding {
+	return {TopLeft = All, TopRight = All, BottomRight = All, BottomLeft = All}
+}
+
 // pad_all returns the padding with `All` on every side.
 @(private="file")
 pad_all :: #force_inline proc(All: f32) -> Padding {
