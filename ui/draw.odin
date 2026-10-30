@@ -66,23 +66,28 @@ DrawData :: proc() -> Frame {
 
 // AddRectFilled appends one filled rectangle, rounding each corner by its own
 // radius.
-AddRectFilled :: proc(List: ^DrawList, Rect: Rect, Tint: Color, Rounding: Rounding = {}) {
-	path_rect(List, Rect, Rounding, Tint)
+AddRectFilled :: proc(List: ^DrawList, Rect: Rect, Tint: Color, CornerRadius: CornerRadius = {}) {
+	path_rect(List, Rect, CornerRadius, Tint)
 	path_fill_convex(List)
 }
 
 // AddRect appends the outline of a rectangle, `Thickness` pixels wide.
-AddRect :: proc(List: ^DrawList, Rect: Rect, Tint: Color, Thickness: f32 = 1, Rounding: Rounding = {}) {
-	path_rect(List, Rect, Rounding, Tint)
+AddRect :: proc(List: ^DrawList, Rect: Rect, Tint: Color, Thickness: f32 = 1, CornerRadius: CornerRadius = {}) {
+	path_rect(List, Rect, CornerRadius, Tint)
 	path_stroke(List, Tint, Thickness)
 }
 
 // AddRectGradient appends a rectangle fading between its four corner colors,
 // rounding each corner by its own radius.
-AddRectGradient :: proc(List: ^DrawList, Rect: Rect, TL, TR, BR, BL: Color, Rounding: Rounding = {}) {
-	path_rect(List, Rect, Rounding, TL)
+AddRectGradient :: proc(
+	List: ^DrawList,
+	Rect: Rect,
+	TopLeft, TopRight, BottomRight, BottomLeft: Color,
+	CornerRadius: CornerRadius = {},
+) {
+	path_rect(List, Rect, CornerRadius, TopLeft)
 	for &p in List.path {
-		p.col = gradient_at(p.pos, Rect, TL, TR, BR, BL)
+		p.col = gradient_at(p.pos, Rect, TopLeft, TopRight, BottomRight, BottomLeft)
 	}
 	path_fill_convex(List)
 }
@@ -200,12 +205,12 @@ path_arc_to :: proc(List: ^DrawList, Center: Vec2, Radius: f32, A0, A1: f32, Tin
 
 // path_rect appends a rectangle, rounding each corner by its own radius.
 @(private="file")
-path_rect :: proc(List: ^DrawList, Rect: Rect, Rounding: Rounding, Tint: Color) {
+path_rect :: proc(List: ^DrawList, Rect: Rect, CornerRadius: CornerRadius, Tint: Color) {
 	limit := min(Rect.w, Rect.h) / 2
-	tl := clamp(Rounding.TopLeft, 0, limit)
-	tr := clamp(Rounding.TopRight, 0, limit)
-	br := clamp(Rounding.BottomRight, 0, limit)
-	bl := clamp(Rounding.BottomLeft, 0, limit)
+	tl := clamp(CornerRadius.TopLeft, 0, limit)
+	tr := clamp(CornerRadius.TopRight, 0, limit)
+	br := clamp(CornerRadius.BottomRight, 0, limit)
+	bl := clamp(CornerRadius.BottomLeft, 0, limit)
 
 	x0, y0 := Rect.x, Rect.y
 	x1, y1 := Rect.x + Rect.w, Rect.y + Rect.h
@@ -286,12 +291,12 @@ draw_build :: proc() {
 draw_node :: proc(i: u32) #no_bounds_check {
 	n := &state.nodes[i]
 
-	rounding := Round(n.style.Radius)
+	corners := n.style.CornerRadius
 	if n.style.Background.a != 0 {
-		AddRectFilled(&list, n.rect, n.style.Background, rounding)
+		AddRectFilled(&list, n.rect, n.style.Background, corners)
 	}
 	if n.style.Border.Width > 0 {
-		AddRect(&list, n.rect, n.style.Border.Color, n.style.Border.Width, rounding)
+		AddRect(&list, n.rect, n.style.Border.Color, n.style.Border.Width, corners)
 	}
 
 	clip := n.config.Clip || n.config.Scroll != {}
@@ -330,15 +335,15 @@ draw_scrollbar :: proc(i: u32) #no_bounds_check {
 		track := Rect{view.x + view.w - THICKNESS, view.y, THICKNESS, view.h}
 		length := max(track.h * view.h / content.y, THICKNESS * 2)
 		at := track.y + (track.h - length) * scroll.y / (content.y - view.h)
-		AddRectFilled(&list, track, TRACK, Round(THICKNESS / 2))
-		AddRectFilled(&list, {track.x, at, track.w, length}, THUMB, Round(THICKNESS / 2))
+		AddRectFilled(&list, track, TRACK, Corners(THICKNESS / 2))
+		AddRectFilled(&list, {track.x, at, track.w, length}, THUMB, Corners(THICKNESS / 2))
 	}
 	if .Horizontal in n.config.Scroll && content.x > view.w {
 		track := Rect{view.x, view.y + view.h - THICKNESS, view.w, THICKNESS}
 		length := max(track.w * view.w / content.x, THICKNESS * 2)
 		at := track.x + (track.w - length) * scroll.x / (content.x - view.w)
-		AddRectFilled(&list, track, TRACK, Round(THICKNESS / 2))
-		AddRectFilled(&list, {at, track.y, length, track.h}, THUMB, Round(THICKNESS / 2))
+		AddRectFilled(&list, track, TRACK, Corners(THICKNESS / 2))
+		AddRectFilled(&list, {at, track.y, length, track.h}, THUMB, Corners(THICKNESS / 2))
 	}
 }
 
@@ -421,13 +426,13 @@ lerp_color :: #force_inline proc "contextless" (A, B: Color, T: f32) -> Color {
 // gradient_at returns the bilinear mix of the four corner colors at `P` inside
 // `Rect`.
 @(private="file")
-gradient_at :: proc(P: Vec2, Rect: Rect, TL, TR, BR, BL: Color) -> Color {
+gradient_at :: proc(P: Vec2, Rect: Rect, TopLeft, TopRight, BottomRight, BottomLeft: Color) -> Color {
 	u: f32 = 0
 	v: f32 = 0
 	if Rect.w != 0 do u = (P.x - Rect.x) / Rect.w
 	if Rect.h != 0 do v = (P.y - Rect.y) / Rect.h
 
-	return lerp_color(lerp_color(TL, TR, u), lerp_color(BL, BR, u), v)
+	return lerp_color(lerp_color(TopLeft, TopRight, u), lerp_color(BottomLeft, BottomRight, u), v)
 }
 
 // append_triangle writes one colored triangle sampling the atlas white texel, so it

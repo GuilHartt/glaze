@@ -1,73 +1,23 @@
 package ui
 
-Vec2  :: [2]f32
-Rect  :: struct{ x, y, w, h: f32 }
-Id    :: distinct u32
-Color :: [4]u8
+Vec2 :: [2]f32
+Rect :: struct{ x, y, w, h: f32 }
+Id   :: distinct u32
 
 Direction :: enum u8 { Row, Column }
 
-Justify :: enum u8 {
-	Start,
-	Center,
-	End,
-	SpaceBetween,
+// RectContains reports whether the point lies inside the rect.
+RectContains :: proc(Rect: Rect, Point: Vec2) -> bool {
+	return Point.x >= Rect.x && Point.x <= Rect.x + Rect.w &&
+		   Point.y >= Rect.y && Point.y <= Rect.y + Rect.h
 }
 
-Align :: enum u8 {
-	Start,
-	Center,
-	End,
-	Stretch,
-}
-
-Padding :: struct {Left, Right, Top, Bottom: f32}
-
-SizeKind :: enum u8 { Fit, Fixed }
-
-Sizing :: struct {
-	Kind:   SizeKind,
-	Basis:  f32,
-	Grow:   f32,
-	Shrink: f32,
-	Min:    f32,
-	Max:    f32,
-}
-
-Border :: struct {
-	Color: Color,
-	Width: f32,
-}
-
-Style :: struct {
-	Background: Color,
-	Radius:     f32,
-	Border:     Border,
-	ScrollBar:  bool,
-}
-
-ScrollAxis :: enum u8 { Horizontal, Vertical }
-Scroll :: bit_set[ScrollAxis]
-
-LayoutConfig :: struct {
-	Width:   Sizing,
-	Height:  Sizing,
-	Pad:     Padding,
-	Gap:     f32,
-	Justify: Justify,
-	Align:   Align,
-	Clip:    bool,
-	Scroll:  Scroll,
-}
-
-TextConfig :: struct {
-	Color: Color,
-	Size:  f32,
-}
-
-ImageConfig :: struct {
-	Size: Vec2,
-	Tint: Color,
+// RectIntersect returns the overlap of the two rects, or an empty rect when they
+// do not touch.
+RectIntersect :: proc(A, B: Rect) -> Rect {
+	x := max(A.x, B.x)
+	y := max(A.y, B.y)
+	return {x, y, max(0, min(A.x + A.w, B.x + B.w) - x), max(0, min(A.y + A.h, B.y + B.h) - y)}
 }
 
 Node :: struct {
