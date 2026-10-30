@@ -35,12 +35,13 @@ PathPoint :: struct {
 // DrawList is the shape buffer of one frame. Shapes append in call order, so later
 // calls paint over earlier ones.
 DrawList :: struct {
-	vertices: [dynamic]Vertex,
-	indices:  [dynamic]u32,
-	commands: [dynamic]DrawCommand,
-	path:     [dynamic]PathPoint,
-	clip:     Rect,
-	texture:  Texture,
+	vertices:   [dynamic]Vertex,
+	indices:    [dynamic]u32,
+	commands:   [dynamic]DrawCommand,
+	path:       [dynamic]PathPoint,
+	clip_stack: [dynamic]Rect,
+	clip:       Rect,
+	texture:    Texture,
 }
 
 // DrawProc runs during the build pass, once the element's rect is known. It must
@@ -153,6 +154,20 @@ AddText :: proc(List: ^DrawList, Pos: Vec2, Text: cstring, Tint: Color, Font: Fo
 	List.texture = previous
 }
 
+// PushClipRect narrows the visible area to `Rect` for everything appended after
+// it. The new clip is the overlap with the current one, so nesting only ever
+// shrinks it.
+PushClipRect :: proc(List: ^DrawList, Rect: Rect) {
+	append(&List.clip_stack, List.clip)
+	List.clip = RectIntersect(List.clip, Rect)
+}
+
+// PopClipRect restores the clip saved by the matching PushClipRect.
+PopClipRect :: proc(List: ^DrawList) {
+	assert(len(List.clip_stack) > 0, "PopClipRect without a matching PushClipRect")
+	List.clip = pop(&List.clip_stack)
+}
+
 // path_clear drops the points accumulated so far.
 @(private="file")
 path_clear :: proc(List: ^DrawList) {
@@ -253,31 +268,80 @@ draw_begin_frame :: proc() {
 	clear(&list.indices)
 	clear(&list.commands)
 	clear(&list.path)
+	clear(&list.clip_stack)
 	list.clip = {0, 0, state.root_size.x, state.root_size.y}
 	list.texture = nil
 }
 
-// draw_build walks the tree in paint order, emitting each node's style, its content
-// and then its paint callback.
+// draw_build walks the tree in paint order, starting from the implicit root.
 @(private)
 draw_build :: proc() {
-	for &n in state.nodes {
-		rounding := Round(n.style.Radius)
-		if n.style.Background.a != 0 {
-			AddRectFilled(&list, n.rect, n.style.Background, rounding)
-		}
-		if n.style.Border.Width > 0 {
-			AddRect(&list, n.rect, n.style.Border.Color, n.style.Border.Width, rounding)
-		}
+	draw_node(0)
+}
 
-		#partial switch content in n.content {
-		case TextContent:
-			AddText(&list, {n.rect.x, n.rect.y}, content.text, content.config.Color, content.font, content.config.Size)
-		}
+// draw_node emits node i and then its subtree. A node that clips pushes its inner
+// rect before its content and children, so everything inside is cut to it, nesting
+// as deep as the tree asks.
+@(private="file")
+draw_node :: proc(i: u32) #no_bounds_check {
+	n := &state.nodes[i]
 
-		if n.draw != nil do n.draw(n.rect, &list, n.draw_user)
+	rounding := Round(n.style.Radius)
+	if n.style.Background.a != 0 {
+		AddRectFilled(&list, n.rect, n.style.Background, rounding)
+	}
+	if n.style.Border.Width > 0 {
+		AddRect(&list, n.rect, n.style.Border.Color, n.style.Border.Width, rounding)
+	}
+
+	clip := n.config.Clip || n.config.Scroll != {}
+	if clip do PushClipRect(&list, inner_rect(n, n.rect))
+
+	#partial switch content in n.content {
+	case TextContent:
+		AddText(&list, {n.rect.x, n.rect.y}, content.text, content.config.Color, content.font, content.config.Size)
+	}
+
+	if n.draw != nil do n.draw(n.rect, &list, n.draw_user)
+
+	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
+		draw_node(c)
+	}
+
+	if clip do PopClipRect(&list)
+	if n.style.ScrollBar do draw_scrollbar(i)
+}
+
+// draw_scrollbar draws the bar of node i on every axis that overflows. The thumb is
+// proportional to how much of the content fits, and it is drawn after the clip is
+// popped so its own container never cuts it.
+@(private="file")
+draw_scrollbar :: proc(i: u32) #no_bounds_check {
+	THICKNESS :: f32(6)
+	TRACK :: Color{255, 255, 255, 30}
+	THUMB :: Color{255, 255, 255, 90}
+
+	n := &state.nodes[i]
+	view := inner_rect(n, n.rect)
+	content := intrinsic_size(i)
+	scroll := ScrollOffset(n.id)
+
+	if .Vertical in n.config.Scroll && content.y > view.h {
+		track := Rect{view.x + view.w - THICKNESS, view.y, THICKNESS, view.h}
+		length := max(track.h * view.h / content.y, THICKNESS * 2)
+		at := track.y + (track.h - length) * scroll.y / (content.y - view.h)
+		AddRectFilled(&list, track, TRACK, Round(THICKNESS / 2))
+		AddRectFilled(&list, {track.x, at, track.w, length}, THUMB, Round(THICKNESS / 2))
+	}
+	if .Horizontal in n.config.Scroll && content.x > view.w {
+		track := Rect{view.x, view.y + view.h - THICKNESS, view.w, THICKNESS}
+		length := max(track.w * view.w / content.x, THICKNESS * 2)
+		at := track.x + (track.w - length) * scroll.x / (content.x - view.w)
+		AddRectFilled(&list, track, TRACK, Round(THICKNESS / 2))
+		AddRectFilled(&list, {at, track.y, length, track.h}, THUMB, Round(THICKNESS / 2))
 	}
 }
+
 
 // mesh_reserve makes room for `Vtx` vertices and `Idx` indices and returns where
 // each block starts.

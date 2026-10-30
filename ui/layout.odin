@@ -43,7 +43,11 @@ Style :: struct {
 	Background: Color,
 	Radius:     f32,
 	Border:     Border,
+	ScrollBar:  bool,
 }
+
+ScrollAxis :: enum u8 { Horizontal, Vertical }
+Scroll :: bit_set[ScrollAxis]
 
 LayoutConfig :: struct {
 	Width:   Sizing,
@@ -52,6 +56,8 @@ LayoutConfig :: struct {
 	Gap:     f32,
 	Justify: Justify,
 	Align:   Align,
+	Clip:    bool,
+	Scroll:  Scroll,
 }
 
 TextConfig :: struct {
@@ -101,6 +107,14 @@ Scope :: struct {
 	count: u32,
 }
 
+// Entry is one stored value: its bytes live on the heap, so the pointer stays
+// valid across frames and across growth of the map.
+@(private="file")
+Entry :: struct {
+	ptr:  rawptr,
+	type: typeid,
+}
+
 State :: struct {
 	nodes:  [dynamic]Node,
 	stack:  [dynamic]u32,
@@ -110,21 +124,45 @@ State :: struct {
 	root_size: Vec2,
 
 	rects:   map[Id]Rect,
-	last_id: Id,
+	storage: map[Id]Entry,
 }
 
 @(private)
 state: State
 
-// AddViewport feeds the size of the surface the UI is laid out into, in pixels.
-// Call it once per frame, before Begin.
-AddViewport :: proc(Size: Vec2) {
+// AddViewportSize feeds the size of the surface the UI is laid out into, in
+// pixels. Call it once per frame, before Begin.
+AddViewportSize :: proc(Size: Vec2) {
 	state.root_size = Size
 }
 
-// Viewport returns the size of the surface the UI is laid out into, in pixels.
-Viewport :: proc() -> Vec2 {
+// ViewportSize returns the size of the surface the UI is laid out into, in pixels.
+ViewportSize :: proc() -> Vec2 {
 	return state.root_size
+}
+
+// Storage returns the `T` stored under `Id`, allocating a zero value the first
+// time the id is seen. Widgets keep their state here, keyed by their own id.
+Storage :: proc(Id: Id, $T: typeid) -> ^T {
+	if entry, ok := state.storage[Id]; ok {
+		assert(entry.type == T, "Storage: same id used with two types")
+		return (^T)(entry.ptr)
+	}
+	ptr := new(T)
+	state.storage[Id] = {ptr = ptr, type = T}
+	return ptr
+}
+
+// ScrollOffset returns the scroll offset stored for `Id`, in pixels. When `Id` is
+// 0 it targets the last element declared.
+ScrollOffset :: proc(Id: Id = 0) -> Vec2 {
+	return Storage(target_id(Id), Vec2)^
+}
+
+// SetScroll stores the scroll offset for `Id`, in pixels. When `Id` is 0 it
+// targets the last element declared.
+SetScroll :: proc(Offset: Vec2, Id: Id = 0) {
+	Storage(target_id(Id), Vec2)^ = Offset
 }
 
 // Begin starts a new frame: clears the node array and opens an implicit root
@@ -145,6 +183,7 @@ Begin :: proc() {
 End :: proc() {
 	assert(len(state.stack) == 1, "unbalanced Open/Close: only the root should remain open at End()")
 	Close()
+	scroll_update()
 	clear(&state.rects)
 	draw_begin_frame()
 	layout()
@@ -165,13 +204,19 @@ Open :: proc(Config: LayoutConfig = {}, Style: Style = {}, Direction: Direction 
 	append(&state.nodes, Node{id = node_id, config = Config, style = Style, direction = Direction})
 	append(&state.stack, idx)
 	append(&state.scopes, Scope{id = node_id})
-	state.last_id = node_id
 	return node_id
 }
 
 // Close pops the current node, finalizing its subtree. Calls must be in strict
 // LIFO (Open/Close) order.
 Close :: proc() #no_bounds_check {
+	when ODIN_DEBUG {
+		assert(len(state.stack) > 0, "Close without a matching Open")
+		assert(
+			state.scopes[len(state.scopes) - 1].id == state.nodes[len(state.nodes) - 1].id,
+			"Close while a PushId is open",
+		)
+	}
 	idx := pop(&state.stack)
 	state.nodes[idx].subtree_end = u32(len(state.nodes))
 	pop(&state.scopes)
@@ -256,7 +301,7 @@ Paint :: proc(Config: LayoutConfig = {}, Draw: DrawProc, User: rawptr = nil) -> 
 @(private="file")
 target_id :: #force_inline proc(id: Id) -> Id {
 	if id != 0 do return id
-	return state.last_id
+	return state.nodes[len(state.nodes) - 1].id
 }
 
 // Hovered reports whether the pointer is inside `Id`, using the geometry from
@@ -334,7 +379,7 @@ cross_sizing :: #force_inline proc(d: Direction, c: LayoutConfig) -> Sizing {
 
 // next_sibling returns the index just past the current node's subtree, which is
 // the next sibling in the flat, DFS pre-order node array.
-@(private="file")
+@(private)
 next_sibling :: #force_inline proc(i: u32) -> u32 #no_bounds_check {
 	return state.nodes[i].subtree_end
 }
@@ -363,7 +408,7 @@ measure_pass :: proc() #no_bounds_check {
 // border and sizing are applied. For a leaf it is the measured text or the image
 // size; for a container, the sum of its children along the main axis (plus gaps)
 // and the largest of them along the cross axis.
-@(private="file")
+@(private)
 intrinsic_size :: proc(i: u32) -> Vec2 #no_bounds_check {
 	n := &state.nodes[i]
 	#partial switch content in n.content {
@@ -481,7 +526,7 @@ resolve_flex :: proc(items: []Flex, free: f32) {
 
 // inner_rect returns the rect left inside a node after its padding and border,
 // never smaller than zero.
-@(private="file")
+@(private)
 inner_rect :: proc(n: ^Node, rect: Rect) -> Rect {
 	p  := n.config.Pad
 	bw := n.style.Border.Width
@@ -543,12 +588,22 @@ arrange :: proc(i: u32, rect: Rect) #no_bounds_check {
 // arrange_children distributes the space inside `inner` among node i's children
 // and recurses into each of them. It sizes every child before recursing, since
 // recursing reuses the shared flex scratch.
-@(private="file")
+@(private)
 arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 	n := &state.nodes[i]
 	d := n.direction
-	main_inner  := main_of(d, {inner.w, inner.h})
+	content := intrinsic_size(i)
+
+	// An axis that scrolls hands its children the content's size instead of the
+	// visible one, so nothing is squeezed to fit and the overflow is real.
+	main_inner := main_of(d, {inner.w, inner.h})
+	if (ScrollAxis.Vertical if d == .Column else .Horizontal) in n.config.Scroll {
+		main_inner = main_of(d, content)
+	}
 	cross_inner := cross_of(d, {inner.w, inner.h})
+	if (ScrollAxis.Horizontal if d == .Column else .Vertical) in n.config.Scroll {
+		cross_inner = cross_of(d, content)
+	}
 
 	items := collect_flex(i)
 	base_sum: f32
@@ -556,19 +611,61 @@ arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 	free := main_inner - base_sum - n.config.Gap * f32(max(len(items)-1, 0))
 	resolve_flex(items, free)
 
-	offset, extra := justify(n.config.Justify, free, len(items))
+	used := n.config.Gap * f32(max(len(items)-1, 0))
+	for it in items do used += it.size
+	offset, extra := justify(n.config.Justify, main_inner - used, len(items))
+
+	// The offset moves only the axes that scroll, and never past the content.
+	scroll: Vec2
+	if n.config.Scroll != {} {
+		scroll = ScrollOffset(n.id)
+		if .Horizontal not_in n.config.Scroll do scroll.x = 0
+		if .Vertical not_in n.config.Scroll do scroll.y = 0
+		scroll = {
+			clamp(scroll.x, 0, max(content.x - inner.w, 0)),
+			clamp(scroll.y, 0, max(content.y - inner.h, 0)),
+		}
+		SetScroll(scroll, n.id)
+	}
+
 	cursor := offset
 	for it in items {
 		child := &state.nodes[it.node]
 		cross_size, cross_pos := cross_axis(n, child, cross_inner, d)
 		size := from_main(d, it.size, cross_size)
 		pos  := from_main(d, cursor, cross_pos)
-		child.rect = Rect{inner.x + pos.x, inner.y + pos.y, size.x, size.y}
+		child.rect = Rect{inner.x + pos.x - scroll.x, inner.y + pos.y - scroll.y, size.x, size.y}
 		cursor += it.size + n.config.Gap + extra
 	}
 
 	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
 		arrange(c, state.nodes[c].rect)
+	}
+}
+
+// scroll_update turns the wheel into scroll for the innermost container under the
+// pointer. It reads the rects of the previous frame, walking the nodes backwards so
+// the last match is the deepest one.
+@(private="file")
+scroll_update :: proc() {
+	wheel := MouseWheel()
+	if wheel == 0 do return
+
+	// One wheel notch scrolls this many pixels.
+	STEP :: 40
+
+	pos := MousePos()
+	for i := len(state.nodes) - 1; i >= 0; i -= 1 {
+		n := &state.nodes[i]
+		if n.config.Scroll == {} do continue
+		r, ok := state.rects[n.id]
+		if !ok || !RectContains(r, pos) do continue
+
+		s := ScrollOffset(n.id)
+		if .Vertical   in n.config.Scroll do s.y -= wheel.y * STEP
+		if .Horizontal in n.config.Scroll do s.x -= wheel.x * STEP
+		SetScroll(s, n.id)
+		break
 	}
 }
 

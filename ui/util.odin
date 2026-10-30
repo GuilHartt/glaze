@@ -58,6 +58,14 @@ RectContains :: proc(Rect: Rect, Point: Vec2) -> bool {
 		   Point.y >= Rect.y && Point.y <= Rect.y + Rect.h
 }
 
+// RectIntersect returns the overlap of the two rects, or an empty rect when they
+// do not touch.
+RectIntersect :: proc(A, B: Rect) -> Rect {
+	x := max(A.x, B.x)
+	y := max(A.y, B.y)
+	return {x, y, max(0, min(A.x + A.w, B.x + B.w) - x), max(0, min(A.y + A.h, B.y + B.h) - y)}
+}
+
 // Hex returns the color of the 0xRRGGBB value `Rgb`, with `Alpha` as its alpha
 // channel.
 Hex :: #force_inline proc(Rgb: u32, Alpha: u8 = 255) -> Color {

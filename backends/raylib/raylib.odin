@@ -22,7 +22,7 @@ Setup :: proc() {
 // before ui.Begin.
 Update :: proc() {
 	ui.AddDeltaTime(rl.GetFrameTime())
-	ui.AddViewport({f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())})
+	ui.AddViewportSize({f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())})
 
 	pos := rl.GetMousePosition()
 	ui.AddMousePos({pos.x, pos.y})
@@ -65,11 +65,7 @@ sync_atlas :: proc() {
 	}
 
 	image := rl.Image{
-		data    = raw_data(rgba),
-		width   = i32(width),
-		height  = i32(height),
-		mipmaps = 1,
-		format  = .UNCOMPRESSED_R8G8B8A8,
+		data = raw_data(rgba), width = i32(width), height = i32(height), mipmaps = 1, format = .UNCOMPRESSED_R8G8B8A8,
 	}
 
 	if resized {
@@ -90,9 +86,19 @@ Render :: proc() {
 	rlgl.DisableBackfaceCulling()
 
 	frame := ui.DrawData()
-	for cmd in frame.Commands {
+	for cmd, i in frame.Commands {
+
+		// A scissor change only affects what is flushed after it, so the batch has to
+		// go out first. BeginScissorMode also flips the y axis for us: rlgl's raw
+		// Scissor takes the origin at the bottom left.
+		if i == 0 || cmd.Clip != frame.Commands[i - 1].Clip {
+			rlgl.DrawRenderBatchActive()
+			rl.BeginScissorMode(i32(cmd.Clip.x), i32(cmd.Clip.y), max(0, i32(cmd.Clip.w)), max(0, i32(cmd.Clip.h)))
+		}
+
 		rlgl.SetTexture(texture_id(cmd.Texture))
 		rlgl.Begin(rlgl.TRIANGLES)
+
 		for i in cmd.Offset ..< cmd.Offset + cmd.Count {
 			v := frame.Vertices[frame.Indices[i]]
 			rlgl.Color4ub(v.Color.r, v.Color.g, v.Color.b, v.Color.a)
@@ -100,12 +106,14 @@ Render :: proc() {
 			rlgl.Vertex2f(v.Pos.x, v.Pos.y)
 		}
 		rlgl.End()
+
 	}
 
 	// The batch must be flushed while culling is still off: the engine's winding
 	// is the opposite of raylib's, so flushing after the restore would drop all of
 	// it.
 	rlgl.DrawRenderBatchActive()
+	rl.EndScissorMode()
 	rlgl.SetTexture(u32(rlgl.GetTextureIdDefault()))
 	rlgl.EnableBackfaceCulling()
 }
