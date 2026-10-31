@@ -7,14 +7,14 @@ Id   :: distinct u32
 Direction :: enum u8 { Row, Column }
 
 // RectContains reports whether the point lies inside the rect.
-RectContains :: proc(Rect: Rect, Point: Vec2) -> bool {
+RectContains :: #force_inline proc "contextless" (Rect: Rect, Point: Vec2) -> bool {
 	return Point.x >= Rect.x && Point.x <= Rect.x + Rect.w &&
 		   Point.y >= Rect.y && Point.y <= Rect.y + Rect.h
 }
 
 // RectIntersect returns the overlap of the two rects, or an empty rect when they
 // do not touch.
-RectIntersect :: proc(A, B: Rect) -> Rect {
+RectIntersect :: #force_inline proc "contextless" (A, B: Rect) -> Rect {
 	x := max(A.x, B.x)
 	y := max(A.y, B.y)
 	return {x, y, max(0, min(A.x + A.w, B.x + B.w) - x), max(0, min(A.y + A.h, B.y + B.h) - y)}
@@ -26,6 +26,7 @@ Node :: struct {
 	direction:   Direction,
 	base:        Vec2,
 	rect:        Rect,
+	clip:        Rect,
 	content:     Content,
 	id:          Id,
 	subtree_end: u32,
@@ -66,20 +67,15 @@ Entry :: struct {
 }
 
 State :: struct {
-	nodes:  [dynamic]Node,
-	stack:  [dynamic]u32,
-	scopes: [dynamic]Scope,
-	flexes: [dynamic]Flex,
-
 	root_size: Vec2,
-
-	rects:   map[Id]Rect,
-	clips:   map[Id]Rect,
-	storage: map[Id]Entry,
-
-	hot:     Id,
-	active:  Id,
-	clicked: Id,
+	hover_id:  Id,
+	press_id:  Id,
+	click_id:  Id,
+	nodes:     [dynamic]Node,
+	stack:     [dynamic]u32,
+	scopes:    [dynamic]Scope,
+	flexes:    [dynamic]Flex,
+	storage:   map[Id]Entry,
 }
 
 @(private)
@@ -140,8 +136,6 @@ End :: proc() {
 	assert(len(state.stack) == 1, "unbalanced Open/Close: only the root should remain open at End()")
 	Close()
 	scroll_update()
-	clear(&state.rects)
-	clear(&state.clips)
 	draw_begin_frame()
 	layout()
 	draw_build()
@@ -261,23 +255,22 @@ target_id :: #force_inline proc(id: Id) -> Id {
 	return state.nodes[len(state.nodes) - 1].id
 }
 
-// Hovered reports whether the pointer is inside `Id`, using the geometry from
-// the previous frame. When `Id` is 0 it targets the last element declared.
+// Hovered reports whether `Id` is the element under the pointer, as it was drawn
+// last frame. When `Id` is 0 it targets the last element declared.
 Hovered :: proc(Id: Id = 0) -> bool {
-	return state.hot != 0 && target_id(Id) == state.hot
+	return state.hover_id != 0 && target_id(Id) == state.hover_id
 }
 
-// Active reports whether `Id` is being held down under the pointer. When `Id` is
-// 0 it targets the last element declared.
-Active :: proc(Id: Id = 0) -> bool {
-	return state.active != 0 && target_id(Id) == state.active
+// Pressed reports whether `Id` took the press and has not been released, even when
+// the pointer has moved away. When `Id` is 0 it targets the last element declared.
+Pressed :: proc(Id: Id = 0) -> bool {
+	return state.press_id != 0 && target_id(Id) == state.press_id
 }
 
-// Clicked reports whether `Id` was clicked this frame: the button went up while
-// the pointer was over it. It is the release edge, not the press. When `Id` is 0
-// it targets the last element declared.
+// Clicked reports whether `Id` was pressed and released in the same place this
+// frame. When `Id` is 0 it targets the last element declared.
 Clicked :: proc(Id: Id = 0) -> bool {
-	return state.clicked != 0 && target_id(Id) == state.clicked
+	return state.click_id != 0 && target_id(Id) == state.click_id
 }
 
 // The root of every frame's id tree; ids derive from it down the hierarchy.
@@ -534,9 +527,10 @@ arrange :: proc(i: u32, rect: Rect) #no_bounds_check {
 	n := &state.nodes[i]
 	n.rect = rect
 	when ODIN_DEBUG {
-		assert(n.id not_in state.rects, "duplicate element id")
+		for j in 0 ..< i {
+			assert(state.nodes[j].id != n.id, "duplicate element id")
+		}
 	}
-	state.rects[n.id] = rect
 	if i + 1 >= n.subtree_end do return
 	arrange_children(i, inner_rect(n, rect))
 }
@@ -599,35 +593,40 @@ arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 	}
 }
 
+// pointer_on reports whether the pointer is over `N`, which means inside its rect
+// and inside the clip it was drawn with.
+@(private="file")
+pointer_on :: #force_inline proc "contextless" (N: ^Node, Pos: Vec2) -> bool {
+	return RectContains(N.rect, Pos) && RectContains(N.clip, Pos)
+}
+
 // interaction_begin picks the element under the pointer and turns the button edges
-// into the active and clicked ids. It walks the nodes backwards, which is the draw
+// into the pressed and clicked ids. It walks the nodes backwards, which is the draw
 // order inverted, so the last element drawn wins, and it requires the pointer to be
 // inside the clip that element was drawn with.
 @(private="file")
 interaction_begin :: proc() #no_bounds_check {
 	pos := MousePos()
 
-	state.hot = 0
+	state.hover_id = 0
 	#reverse for &n in state.nodes {
-		rect, in_rect := state.rects[n.id]
-		clip, in_clip := state.clips[n.id]
-		if !in_rect || !in_clip do continue
-		if RectContains(rect, pos) && RectContains(clip, pos) {
-			state.hot = n.id
+		if pointer_on(&n, pos) {
+			state.hover_id = n.id
 			break
 		}
 	}
 
 	if MousePressed(.Left) {
-		state.active = state.hot
+		state.press_id = state.hover_id
 	}
 
-	state.clicked = 0
+	state.click_id = 0
 	if MouseReleased(.Left) {
-		if state.active != 0 && state.active == state.hot {
-			state.clicked = state.active
+		pressed := state.press_id
+		if pressed != 0 && pressed == state.hover_id {
+			state.click_id = pressed
 		}
-		state.active = 0
+		state.press_id = 0
 	}
 }
 
@@ -643,11 +642,9 @@ scroll_update :: proc() {
 	STEP :: 40
 
 	pos := MousePos()
-	for i := len(state.nodes) - 1; i >= 0; i -= 1 {
-		n := &state.nodes[i]
+	#reverse for &n in state.nodes {
 		if n.config.Scroll == {} do continue
-		r, ok := state.rects[n.id]
-		if !ok || !RectContains(r, pos) do continue
+		if !pointer_on(&n, pos) do continue
 
 		s := ScrollOffset(n.id)
 		if .Vertical   in n.config.Scroll do s.y -= wheel.y * STEP
