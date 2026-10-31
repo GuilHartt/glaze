@@ -52,127 +52,6 @@ Content :: union {
 	ImageContent,
 }
 
-// NO_NODE marks a scope that carries no node, which is what PushId opens.
-@(private="file")
-NO_NODE :: max(u32)
-
-// Scope is one level of the id stack: the seed new ids derive from, how many
-// elements have already been opened inside it, and the node it belongs to, which
-// is NO_NODE for a PushId scope.
-@(private="file")
-Scope :: struct {
-	id:    Id,
-	count: u32,
-	node:  u32,
-}
-
-// Entry is one stored value: its bytes live on the heap, so the pointer stays
-// valid across frames and across growth of the map.
-@(private="file")
-Entry :: struct {
-	ptr:  rawptr,
-	type: typeid,
-}
-
-// ERRORS_ASSERT makes a misuse of the library trap instead of only reporting it.
-// Turn it off with -define:glaze_errors_assert=false.
-@(private="file")
-ERRORS_ASSERT :: #config(glaze_errors_assert, true)
-
-// CHECKS enables the structural checks that cost time, such as the duplicate id
-// scan. Turn it off with -define:glaze_checks=false.
-@(private="file")
-CHECKS :: #config(glaze_checks, true)
-
-// seen_ids catches two elements landing on the same id, which a 32 bit hash can
-// produce. It only exists when CHECKS is on.
-when CHECKS {
-	@(private="file") seen_ids: map[Id]u32
-}
-
-// ErrorProc receives a message when the library detects a misuse it can recover
-// from, such as an unbalanced PushId or a duplicate element id.
-ErrorProc :: #type proc(Message: cstring, User: rawptr)
-
-@(private="file")
-error_proc: ErrorProc
-
-@(private="file")
-error_user: rawptr
-
-// BindError installs the callback that receives those messages. With none bound
-// and ERRORS_ASSERT off, the library writes them to stderr.
-BindError :: proc(Fn: ErrorProc, User: rawptr = nil) {
-	error_proc = Fn
-	error_user = User
-}
-
-// report sends one misuse message to the callback and, when ERRORS_ASSERT is on,
-// traps so the mistake is not lost in a log nobody reads.
-@(private="file")
-report :: proc(Message: cstring) {
-	if error_proc != nil {
-		error_proc(Message, error_user)
-	}
-
-	when ERRORS_ASSERT {
-		assert(false, string(Message))
-	} else {
-		if error_proc == nil do fmt.eprintln("ui:", Message)
-	}
-}
-
-State :: struct {
-	root_size: Vec2,
-	hover_id:  Id,
-	press_id:  Id,
-	click_id:  Id,
-	nodes:     [dynamic]Node,
-	scopes:    [dynamic]Scope,
-	flexes:    [dynamic]Flex,
-	storage:   map[Id]Entry,
-}
-
-@(private)
-state: State
-
-// AddViewportSize feeds the size of the surface the UI is laid out into, in
-// pixels. Call it once per frame, before Begin.
-AddViewportSize :: proc(Size: Vec2) {
-	state.root_size = Size
-}
-
-// ViewportSize returns the size of the surface the UI is laid out into, in pixels.
-ViewportSize :: proc() -> Vec2 {
-	return state.root_size
-}
-
-// Storage returns the `T` stored under `Id`, allocating a zero value the first
-// time the id is seen. Widgets keep their state here, keyed by their own id.
-Storage :: proc(Id: Id, $T: typeid) -> ^T {
-	if entry, ok := state.storage[Id]; ok {
-		if entry.type != T {
-			report("ui: the same id was stored with two different types")
-		}
-		return (^T)(entry.ptr)
-	}
-	ptr := new(T)
-	state.storage[Id] = {ptr = ptr, type = T}
-	return ptr
-}
-
-// ScrollOffset returns the scroll offset stored for `Id`, in pixels. When `Id` is
-// 0 it targets the last element declared.
-ScrollOffset :: proc(Id: Id = 0) -> Vec2 {
-	return Storage(target_id(Id), Vec2)^
-}
-
-// SetScroll stores the scroll offset for `Id`, in pixels. When `Id` is 0 it
-// targets the last element declared.
-SetScroll :: proc(Offset: Vec2, Id: Id = 0) {
-	Storage(target_id(Id), Vec2)^ = Offset
-}
-
 // Begin starts a new frame: clears the node array and opens an implicit root
 // node sized to the viewport, which becomes the parent of every top-level
 // element. Must be paired with End.
@@ -309,32 +188,6 @@ Paint :: proc(Config: LayoutConfig = {}, Draw: DrawProc, User: rawptr = nil) -> 
 	return node_id
 }
 
-// target_id resolves the target of an interaction query: `id` when given, or the
-// last element declared, leaf or container, when 0.
-@(private="file")
-target_id :: #force_inline proc(id: Id) -> Id {
-	if id != 0 do return id
-	return state.nodes[len(state.nodes) - 1].id
-}
-
-// Hovered reports whether `Id` is the element under the pointer, as it was drawn
-// last frame. When `Id` is 0 it targets the last element declared.
-Hovered :: proc(Id: Id = 0) -> bool {
-	return state.hover_id != 0 && target_id(Id) == state.hover_id
-}
-
-// Pressed reports whether `Id` took the press and has not been released, even when
-// the pointer has moved away. When `Id` is 0 it targets the last element declared.
-Pressed :: proc(Id: Id = 0) -> bool {
-	return state.press_id != 0 && target_id(Id) == state.press_id
-}
-
-// Clicked reports whether `Id` was pressed and released in the same place this
-// frame. When `Id` is 0 it targets the last element declared.
-Clicked :: proc(Id: Id = 0) -> bool {
-	return state.click_id != 0 && target_id(Id) == state.click_id
-}
-
 // The root of every frame's id tree; ids derive from it down the hierarchy.
 @(private="file")
 ROOT_SEED :: Id(0x9e3779b9)
@@ -456,7 +309,7 @@ box_size :: proc(n: ^Node, content: Vec2) -> Vec2 {
 
 // Flex is a child's record during main-axis distribution: its base size, its
 // flexibility and range, and the size resolved for it.
-@(private="file")
+@(private)
 Flex :: struct {
 	node:   u32,
 	base:   f32,
@@ -656,69 +509,9 @@ arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 	}
 }
 
-// pointer_on reports whether the pointer is over `N`, which means inside its rect
-// and inside the clip it was drawn with.
-@(private="file")
-pointer_on :: #force_inline proc "contextless" (N: ^Node, Pos: Vec2) -> bool {
-	return RectContains(N.rect, Pos) && RectContains(N.clip, Pos)
-}
-
-// interaction_begin picks the element under the pointer and turns the button edges
-// into the pressed and clicked ids. It walks the nodes backwards, which is the draw
-// order inverted, so the last element drawn wins, and it requires the pointer to be
-// inside the clip that element was drawn with.
-@(private="file")
-interaction_begin :: proc() #no_bounds_check {
-	pos := MousePos()
-
-	state.hover_id = 0
-	#reverse for &n in state.nodes {
-		if pointer_on(&n, pos) {
-			state.hover_id = n.id
-			break
-		}
-	}
-
-	if MousePressed(.Left) {
-		state.press_id = state.hover_id
-	}
-
-	state.click_id = 0
-	if MouseReleased(.Left) {
-		pressed := state.press_id
-		if pressed != 0 && pressed == state.hover_id {
-			state.click_id = pressed
-		}
-		state.press_id = 0
-	}
-}
-
-// scroll_update turns the wheel into scroll for the innermost container under the
-// pointer. It reads the rects of the previous frame, walking the nodes backwards so
-// the last match is the deepest one.
-@(private="file")
-scroll_update :: proc() {
-	wheel := MouseWheel()
-	if wheel == 0 do return
-
-	// One wheel notch scrolls this many pixels.
-	STEP :: 40
-
-	pos := MousePos()
-	#reverse for &n in state.nodes {
-		if n.config.Scroll == {} do continue
-		if !pointer_on(&n, pos) do continue
-
-		s := ScrollOffset(n.id)
-		if .Vertical   in n.config.Scroll do s.y -= wheel.y * STEP
-		if .Horizontal in n.config.Scroll do s.x -= wheel.x * STEP
-		SetScroll(s, n.id)
-		break
-	}
-}
-
 @(private="file")
 layout :: proc() {
 	measure_pass()
 	arrange(0, Rect{0, 0, state.root_size.x, state.root_size.y})
 }
+
