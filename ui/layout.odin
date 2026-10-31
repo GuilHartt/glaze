@@ -1,5 +1,7 @@
 package ui
 
+import "core:fmt"
+
 Vec2 :: [2]f32
 Rect :: struct{ x, y, w, h: f32 }
 Id   :: distinct u32
@@ -50,12 +52,18 @@ Content :: union {
 	ImageContent,
 }
 
-// Scope is one level of the id stack: the seed new ids derive from, and how many
-// elements have already been opened inside it.
+// NO_NODE marks a scope that carries no node, which is what PushId opens.
+@(private="file")
+NO_NODE :: max(u32)
+
+// Scope is one level of the id stack: the seed new ids derive from, how many
+// elements have already been opened inside it, and the node it belongs to, which
+// is NO_NODE for a PushId scope.
 @(private="file")
 Scope :: struct {
 	id:    Id,
 	count: u32,
+	node:  u32,
 }
 
 // Entry is one stored value: its bytes live on the heap, so the pointer stays
@@ -66,13 +74,60 @@ Entry :: struct {
 	type: typeid,
 }
 
+// ERRORS_ASSERT makes a misuse of the library trap instead of only reporting it.
+// Turn it off with -define:glaze_errors_assert=false.
+@(private="file")
+ERRORS_ASSERT :: #config(glaze_errors_assert, true)
+
+// CHECKS enables the structural checks that cost time, such as the duplicate id
+// scan. Turn it off with -define:glaze_checks=false.
+@(private="file")
+CHECKS :: #config(glaze_checks, true)
+
+// seen_ids catches two elements landing on the same id, which a 32 bit hash can
+// produce. It only exists when CHECKS is on.
+when CHECKS {
+	@(private="file") seen_ids: map[Id]u32
+}
+
+// ErrorProc receives a message when the library detects a misuse it can recover
+// from, such as an unbalanced PushId or a duplicate element id.
+ErrorProc :: #type proc(Message: cstring, User: rawptr)
+
+@(private="file")
+error_proc: ErrorProc
+
+@(private="file")
+error_user: rawptr
+
+// BindError installs the callback that receives those messages. With none bound
+// and ERRORS_ASSERT off, the library writes them to stderr.
+BindError :: proc(Fn: ErrorProc, User: rawptr = nil) {
+	error_proc = Fn
+	error_user = User
+}
+
+// report sends one misuse message to the callback and, when ERRORS_ASSERT is on,
+// traps so the mistake is not lost in a log nobody reads.
+@(private="file")
+report :: proc(Message: cstring) {
+	if error_proc != nil {
+		error_proc(Message, error_user)
+	}
+
+	when ERRORS_ASSERT {
+		assert(false, string(Message))
+	} else {
+		if error_proc == nil do fmt.eprintln("ui:", Message)
+	}
+}
+
 State :: struct {
 	root_size: Vec2,
 	hover_id:  Id,
 	press_id:  Id,
 	click_id:  Id,
 	nodes:     [dynamic]Node,
-	stack:     [dynamic]u32,
 	scopes:    [dynamic]Scope,
 	flexes:    [dynamic]Flex,
 	storage:   map[Id]Entry,
@@ -96,7 +151,9 @@ ViewportSize :: proc() -> Vec2 {
 // time the id is seen. Widgets keep their state here, keyed by their own id.
 Storage :: proc(Id: Id, $T: typeid) -> ^T {
 	if entry, ok := state.storage[Id]; ok {
-		assert(entry.type == T, "Storage: same id used with two types")
+		if entry.type != T {
+			report("ui: the same id was stored with two different types")
+		}
 		return (^T)(entry.ptr)
 	}
 	ptr := new(T)
@@ -122,18 +179,22 @@ SetScroll :: proc(Offset: Vec2, Id: Id = 0) {
 Begin :: proc() {
 	interaction_begin()
 	clear(&state.nodes)
-	clear(&state.stack)
 	clear(&state.scopes)
-	append(&state.scopes, Scope{id = ROOT_SEED})
+	when CHECKS {
+		clear(&seen_ids)
+	}
+	append(&state.scopes, Scope{id = ROOT_SEED, node = NO_NODE})
 	Open({Width = Fixed(state.root_size.x), Height = Fixed(state.root_size.y)}, {}, .Column)
 }
 
 // End finishes the frame: closes the implicit root, computes layout and
-// generates the draw commands. Must be paired with Begin. The hit-test rects of
-// the previous frame stay readable until here, so widgets declared during the
-// frame can query them.
+// generates the draw commands. Must be paired with Begin. Each node keeps the rect
+// and the clip of the frame that drew it, so widgets declared during the frame can
+// query the geometry of the previous one.
 End :: proc() {
-	assert(len(state.stack) == 1, "unbalanced Open/Close: only the root should remain open at End()")
+	if len(state.scopes) != 2 || state.scopes[1].node == NO_NODE {
+		report("ui: unbalanced Open/Close, or an open PushId, at End")
+	}
 	Close()
 	scroll_update()
 	draw_begin_frame()
@@ -142,10 +203,9 @@ End :: proc() {
 	input_end_frame()
 }
 
-// Open pushes a new node onto the open stack and makes it the parent of
-// everything declared until the matching Close. The node gets an id derived
-// automatically from its parent and position. Returns the id. Prefer Row/Column
-// for the common cases.
+// Open opens a new node and makes it the parent of everything declared until the
+// matching Close. The node gets an id derived automatically from its parent and
+// position. Returns the id. Prefer Row/Column for the common cases.
 Open :: proc(Config: LayoutConfig = {}, Style: Style = {}, Direction: Direction = .Row) -> Id {
 	parent := &state.scopes[len(state.scopes)-1]
 	node_id := id_mix(parent.id, parent.count)
@@ -153,24 +213,23 @@ Open :: proc(Config: LayoutConfig = {}, Style: Style = {}, Direction: Direction 
 
 	idx := u32(len(state.nodes))
 	append(&state.nodes, Node{id = node_id, config = Config, style = Style, direction = Direction})
-	append(&state.stack, idx)
-	append(&state.scopes, Scope{id = node_id})
+	append(&state.scopes, Scope{id = node_id, node = idx})
 	return node_id
 }
 
 // Close pops the current node, finalizing its subtree. Calls must be in strict
 // LIFO (Open/Close) order.
 Close :: proc() #no_bounds_check {
-	when ODIN_DEBUG {
-		assert(len(state.stack) > 0, "Close without a matching Open")
-		assert(
-			state.scopes[len(state.scopes) - 1].id == state.nodes[len(state.nodes) - 1].id,
-			"Close while a PushId is open",
-		)
+	if len(state.scopes) <= 1 {
+		report("ui: Close without a matching Open")
+		return
 	}
-	idx := pop(&state.stack)
-	state.nodes[idx].subtree_end = u32(len(state.nodes))
-	pop(&state.scopes)
+	scope := pop(&state.scopes)
+	if scope.node == NO_NODE {
+		report("ui: Close called while a PushId is open")
+		return
+	}
+	state.nodes[scope.node].subtree_end = u32(len(state.nodes))
 }
 
 // PushId opens a new id scope, so the elements declared inside it derive their
@@ -178,13 +237,16 @@ Close :: proc() #no_bounds_check {
 // explicitly with PopId.
 PushId :: proc() {
 	parent := &state.scopes[len(state.scopes)-1]
-	append(&state.scopes, Scope{id = id_mix(parent.id, parent.count)})
+	append(&state.scopes, Scope{id = id_mix(parent.id, parent.count), node = NO_NODE})
 	parent.count += 1
 }
 
 // PopId closes the scope opened by PushId.
 PopId :: proc() {
-	assert(len(state.scopes) > len(state.stack) + 1, "PopId without a matching PushId")
+	if len(state.scopes) <= 1 || state.scopes[len(state.scopes) - 1].node != NO_NODE {
+		report("ui: PopId without a matching PushId")
+		return
+	}
 	pop(&state.scopes)
 }
 
@@ -526,10 +588,11 @@ cross_axis :: proc(n: ^Node, child: ^Node, cross_inner: f32, d: Direction) -> (s
 arrange :: proc(i: u32, rect: Rect) #no_bounds_check {
 	n := &state.nodes[i]
 	n.rect = rect
-	when ODIN_DEBUG {
-		for j in 0 ..< i {
-			assert(state.nodes[j].id != n.id, "duplicate element id")
+	when CHECKS {
+		if previous, seen := seen_ids[n.id]; seen {
+			report(fmt.ctprintf("ui: duplicate element id at node %v and node %v", previous, i))
 		}
+		seen_ids[n.id] = i
 	}
 	if i + 1 >= n.subtree_end do return
 	arrange_children(i, inner_rect(n, rect))

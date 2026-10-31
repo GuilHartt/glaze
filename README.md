@@ -59,6 +59,26 @@ ui.End()
 backend.Render()  // per frame: draw the commands
 ```
 
+## Building
+
+During development the library's checks and asserts should be on, so build with `-debug`:
+
+```
+odin run . -debug
+```
+
+A build meant for other people turns them off explicitly:
+
+```
+odin build . -o:speed -define:glaze_errors_assert=false -define:glaze_checks=false
+```
+
+* `-o:speed` turns the optimizer on. The Odin default, `-o:minimal`, does little.
+* `glaze_errors_assert` traps on a misuse, such as an unbalanced `PushId`. Turned off, the library reports through `BindError` instead of taking the program down.
+* `glaze_checks` runs the structural checks that cost time, such as the duplicate id scan. Turned off, they are not compiled in.
+
+Both configs are on by default, which is what you want while building something. In a build that ships, `BindError` is worth wiring even with the assert off, so a mistake in interface code lands in your log instead of nowhere.
+
 ## Writing a backend
 
 A backend is one file that exposes three procedures and stays out of the loop.
