@@ -74,7 +74,12 @@ State :: struct {
 	root_size: Vec2,
 
 	rects:   map[Id]Rect,
+	clips:   map[Id]Rect,
 	storage: map[Id]Entry,
+
+	hot:     Id,
+	active:  Id,
+	clicked: Id,
 }
 
 @(private)
@@ -119,6 +124,7 @@ SetScroll :: proc(Offset: Vec2, Id: Id = 0) {
 // node sized to the viewport, which becomes the parent of every top-level
 // element. Must be paired with End.
 Begin :: proc() {
+	interaction_begin()
 	clear(&state.nodes)
 	clear(&state.stack)
 	clear(&state.scopes)
@@ -135,6 +141,7 @@ End :: proc() {
 	Close()
 	scroll_update()
 	clear(&state.rects)
+	clear(&state.clips)
 	draw_begin_frame()
 	layout()
 	draw_build()
@@ -257,21 +264,20 @@ target_id :: #force_inline proc(id: Id) -> Id {
 // Hovered reports whether the pointer is inside `Id`, using the geometry from
 // the previous frame. When `Id` is 0 it targets the last element declared.
 Hovered :: proc(Id: Id = 0) -> bool {
-	r, ok := state.rects[target_id(Id)]
-	return ok && RectContains(r, MousePos())
+	return state.hot != 0 && target_id(Id) == state.hot
 }
 
 // Active reports whether `Id` is being held down under the pointer. When `Id` is
 // 0 it targets the last element declared.
 Active :: proc(Id: Id = 0) -> bool {
-	return Hovered(Id) && MouseDown(.Left)
+	return state.active != 0 && target_id(Id) == state.active
 }
 
 // Clicked reports whether `Id` was clicked this frame: the button went up while
 // the pointer was over it. It is the release edge, not the press. When `Id` is 0
 // it targets the last element declared.
 Clicked :: proc(Id: Id = 0) -> bool {
-	return Hovered(Id) && MouseReleased(.Left)
+	return state.clicked != 0 && target_id(Id) == state.clicked
 }
 
 // The root of every frame's id tree; ids derive from it down the hierarchy.
@@ -590,6 +596,38 @@ arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 
 	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
 		arrange(c, state.nodes[c].rect)
+	}
+}
+
+// interaction_begin picks the element under the pointer and turns the button edges
+// into the active and clicked ids. It walks the nodes backwards, which is the draw
+// order inverted, so the last element drawn wins, and it requires the pointer to be
+// inside the clip that element was drawn with.
+@(private="file")
+interaction_begin :: proc() #no_bounds_check {
+	pos := MousePos()
+
+	state.hot = 0
+	#reverse for &n in state.nodes {
+		rect, in_rect := state.rects[n.id]
+		clip, in_clip := state.clips[n.id]
+		if !in_rect || !in_clip do continue
+		if RectContains(rect, pos) && RectContains(clip, pos) {
+			state.hot = n.id
+			break
+		}
+	}
+
+	if MousePressed(.Left) {
+		state.active = state.hot
+	}
+
+	state.clicked = 0
+	if MouseReleased(.Left) {
+		if state.active != 0 && state.active == state.hot {
+			state.clicked = state.active
+		}
+		state.active = 0
 	}
 }
 

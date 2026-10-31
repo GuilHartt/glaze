@@ -484,6 +484,8 @@ draw_node :: proc(i: u32) #no_bounds_check {
 	clip := n.config.Clip || n.config.Scroll != {}
 	if clip do PushClipRect(&list, inner_rect(n, n.rect))
 
+	state.clips[n.id] = list.clip
+
 	#partial switch content in n.content {
 	case TextContent:
 		AddText(&list, {n.rect.x, n.rect.y}, content.text, content.config.Color, content.font, content.config.Size)
