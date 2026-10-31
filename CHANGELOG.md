@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.4.0] - 2026-10-31
+
+### Added
+
+- `Hovered`, `Pressed` and `Clicked` read one id each, decided once at the start of the frame
+- a click needs the press and the release on the same element
+- hover respects the clip and the draw order, so the topmost element wins
+- `ErrorProc` and `BindError`, one place for the host to receive a misuse message
+- `glaze_errors_assert` and `glaze_checks`, `#config` flags with explicit defaults
+
+### Changed
+
+- `Active` is now `Pressed`, and the state reads `hover_id`, `press_id` and `click_id`
+- `Pressed` keeps the press after the pointer leaves, which is what a drag needs
+- each node keeps the clip it was drawn with, so the hit test needs no maps
+- `Close`, `PopId` and `End` report through the error channel instead of asserting in debug only
+- the duplicate id check is a map instead of a quadratic scan
+
 ## [0.3.0] - 2026-10-30
 
 ### Added
