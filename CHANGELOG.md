@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.1] - 2026-11-01
+
+### Added
+
+- `Hit` in `LayoutConfig`, so a container claims every hit inside its rect, padding included
+- the scroll bar takes its own strip from the layout, keeps a gap from the content, and its thumb can be dragged
+
+### Fixed
+
+- the wheel reads the rects and clips of the previous frame again, since it now runs at the start of the frame
+- the clip a node is tested against is the one it was drawn inside, so a box answers over its padding and its bar
+
 ## [0.4.0] - 2026-10-31
 
 ### Added
