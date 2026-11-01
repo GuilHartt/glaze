@@ -33,20 +33,40 @@ pointer_on :: #force_inline proc "contextless" (N: ^Node, Pos: Vec2) -> bool {
 	return RectContains(N.rect, Pos) && RectContains(N.clip, Pos)
 }
 
-// interaction_begin picks the element under the pointer and turns the button edges
-// into the pressed and clicked ids. It walks the nodes backwards, which is the draw
-// order inverted, so the last element drawn wins, and it requires the pointer to be
-// inside the clip that element was drawn with.
+// pointer_owner returns the node that owns the hit at `Pos`: the innermost node
+// that declares `Hit` and is an ancestor of the deepest node under the pointer, or
+// the deepest node itself when no ancestor declares it. A node contains `deepest`
+// when its subtree ends past it, so the backwards walk meets the ancestors in
+// order, from the innermost outwards.
 @(private)
-interaction_begin :: proc() #no_bounds_check {
-	pos := MousePos()
+pointer_owner :: proc(Pos: Vec2) -> u32 #no_bounds_check {
+	deepest, owner := NO_NODE, NO_NODE
 
-	state.hover_id = 0
-	#reverse for &n in state.nodes {
-		if pointer_on(&n, pos) {
-			state.hover_id = n.id
+	#reverse for &n, i in state.nodes {
+		if deepest == NO_NODE {
+			if !pointer_on(&n, Pos) do continue
+			deepest = u32(i)
+		}
+		if n.config.Hit && n.subtree_end > deepest {
+			owner = u32(i)
 			break
 		}
+	}
+
+	if owner == NO_NODE do return deepest
+	return owner
+}
+
+// interaction_begin turns the pointer and the button edges into the hovered,
+// pressed and clicked ids. The target is the element that owns the hit, so a
+// container that declares `Hit` wins over the leaves it draws on top of.
+@(private)
+interaction_begin :: proc() #no_bounds_check {
+	owner := pointer_owner(MousePos())
+
+	state.hover_id = 0
+	if owner != NO_NODE {
+		state.hover_id = state.nodes[owner].id
 	}
 
 	if MousePressed(.Left) {

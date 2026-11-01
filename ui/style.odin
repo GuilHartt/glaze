@@ -60,7 +60,9 @@ ScrollAxis :: enum u8 { Horizontal, Vertical }
 // its content can move inside the box.
 Scroll :: bit_set[ScrollAxis]
 
-// LayoutConfig is how an element is sized and how it places its children.
+// LayoutConfig is how an element is sized and how it places its children. A
+// container with `Hit` claims every hit inside its rect, including the padding
+// and the parts its children paint over.
 LayoutConfig :: struct {
 	Width:   Sizing,
 	Height:  Sizing,
@@ -70,6 +72,7 @@ LayoutConfig :: struct {
 	Align:   Align,
 	Clip:    bool,
 	Scroll:  Scroll,
+	Hit:     bool,
 }
 
 // TextConfig is how a text leaf paints.
