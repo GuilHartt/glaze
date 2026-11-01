@@ -57,6 +57,7 @@ Content :: union {
 // element. Must be paired with End.
 Begin :: proc() {
 	interaction_begin()
+	scroll_update()
 	clear(&state.nodes)
 	clear(&state.scopes)
 	when CHECKS {
@@ -75,7 +76,6 @@ End :: proc() {
 		report("ui: unbalanced Open/Close, or an open PushId, at End")
 	}
 	Close()
-	scroll_update()
 	draw_begin_frame()
 	layout()
 	draw_build()
