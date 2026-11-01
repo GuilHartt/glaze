@@ -33,7 +33,6 @@ Node :: struct {
 	id:          Id,
 	subtree_end: u32,
 	draw:        DrawProc,
-	draw_user:   rawptr,
 }
 
 TextContent :: struct {
@@ -177,14 +176,16 @@ Image :: proc(Handle: rawptr, Size: Vec2, Tint: Color = {255, 255, 255, 255}) ->
 	return node_id
 }
 
-// Paint adds a leaf whose drawing is `Draw` and returns its id. `Config` sizes it
-// like any other element, so it needs no Row or Column around it. The callback must
-// only emit shapes, never declare elements.
-Paint :: proc(Config: LayoutConfig = {}, Draw: DrawProc, User: rawptr = nil) -> Id #no_bounds_check {
-	node_id := Open(Config)
-	node := &state.nodes[len(state.nodes) - 1]
-	node.draw = Draw
-	node.draw_user = User
+// Paint adds a leaf whose drawing is `Draw` and returns its id. It is sized like any
+// other element, so it needs no Row or Column around it. The callback must only emit
+// shapes, never declare elements.
+Paint :: proc(
+	Draw:   DrawProc,
+	Width:  Sizing = {Kind = .Fixed, Grow = 1},
+	Height: Sizing = {Kind = .Fixed, Grow = 1},
+) -> Id #no_bounds_check {
+	node_id := Open({Width = Width, Height = Height})
+	state.nodes[len(state.nodes) - 1].draw = Draw
 	Close()
 	return node_id
 }

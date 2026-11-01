@@ -44,9 +44,11 @@ DrawList :: struct {
 	texture:    Texture,
 }
 
-// DrawProc runs during the build pass, once the element's rect is known. It must
-// only emit into `List`, never declare elements.
-DrawProc :: #type proc(Rect: Rect, List: ^DrawList, User: rawptr)
+// DrawProc runs during the build pass, once the element's rect is known. It receives
+// the element's own id, so it can read what Storage holds for it and ask the
+// interaction queries about it. It must only emit into `List`, never declare
+// elements.
+DrawProc :: #type proc(Rect: Rect, List: ^DrawList, Id: Id)
 
 // Frame is what a backend needs in order to draw one frame.
 Frame :: struct {
@@ -491,7 +493,7 @@ draw_node :: proc(i: u32) #no_bounds_check {
 		AddText(&list, {n.rect.x, n.rect.y}, content.text, content.config.Color, content.font, content.config.Size)
 	}
 
-	if n.draw != nil do n.draw(n.rect, &list, n.draw_user)
+	if n.draw != nil do n.draw(n.rect, &list, n.id)
 
 	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
 		draw_node(c)
