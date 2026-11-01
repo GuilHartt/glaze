@@ -57,6 +57,7 @@ Content :: union {
 // element. Must be paired with End.
 Begin :: proc() {
 	interaction_begin()
+	scrollbar_update()
 	scroll_update()
 	clear(&state.nodes)
 	clear(&state.scopes)
@@ -295,11 +296,24 @@ intrinsic_size :: proc(i: u32) -> Vec2 #no_bounds_check {
 	return from_main(d, main, cross)
 }
 
+// padding returns the node's padding with the scroll bar strip added to the trailing
+// edge of the axes that show one, so the strip is measured and laid out exactly like
+// padding.
+@(private)
+padding :: proc(n: ^Node) -> Padding {
+	p := n.config.Pad
+	if n.style.ScrollBar {
+		if .Vertical in n.config.Scroll do p.Right += SCROLLBAR_THICKNESS + SCROLLBAR_GAP
+		if .Horizontal in n.config.Scroll do p.Bottom += SCROLLBAR_THICKNESS + SCROLLBAR_GAP
+	}
+	return p
+}
+
 // box_size applies the box model to a content size: padding and border sit
 // inside the box, then the axis sizing (fixed and min/max) resolves each axis.
 @(private="file")
 box_size :: proc(n: ^Node, content: Vec2) -> Vec2 {
-	p  := n.config.Pad
+	p  := padding(n)
 	bw := n.style.Border.Width * 2
 	return {
 		resolve_axis(n.config.Width,  content.x + p.Left + p.Right + bw),
@@ -388,11 +402,11 @@ resolve_flex :: proc(items: []Flex, free: f32) {
 	}
 }
 
-// inner_rect returns the rect left inside a node after its padding and border,
-// never smaller than zero.
+// inner_rect returns the rect left inside a node after its padding and border, never
+// smaller than zero. The padding it uses already carries the scroll bar strip.
 @(private)
 inner_rect :: proc(n: ^Node, rect: Rect) -> Rect {
-	p  := n.config.Pad
+	p  := padding(n)
 	bw := n.style.Border.Width
 	return {
 		rect.x + p.Left + bw,

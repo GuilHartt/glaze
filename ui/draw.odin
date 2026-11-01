@@ -481,10 +481,10 @@ draw_node :: proc(i: u32) #no_bounds_check {
 		AddRectStroke(&list, n.rect, n.style.Border.Color, n.style.Border.Width, corners)
 	}
 
+	n.clip = list.clip
+
 	clip := n.config.Clip || n.config.Scroll != {}
 	if clip do PushClipRect(&list, inner_rect(n, n.rect))
-
-	n.clip = list.clip
 
 	#partial switch content in n.content {
 	case TextContent:
@@ -501,40 +501,20 @@ draw_node :: proc(i: u32) #no_bounds_check {
 	if n.style.ScrollBar do draw_scrollbar(i)
 }
 
-// draw_scrollbar draws the bar of node i on every axis that overflows. The thumb is
-// proportional to how much of the content fits, and it is drawn after the clip is
-// popped so its own container never cuts it.
+// draw_scrollbar draws the bar of node i on every axis that has one, with the same
+// geometry the drag uses, and after the clip is popped so its own container never
+// cuts it.
 @(private="file")
 draw_scrollbar :: proc(i: u32) #no_bounds_check {
-	THICKNESS :: f32(6)
 	TRACK :: Color{255, 255, 255, 30}
 	THUMB :: Color{255, 255, 255, 90}
 
-	// bar lays one piece of the scrollbar along its axis, hugging the trailing edge
-	// of the box.
-	bar :: proc(View: Rect, Vertical: bool, Start, Length: f32) -> Rect {
-		if Vertical do return {View.x + View.w - THICKNESS, View.y + Start, THICKNESS, Length}
-		return {View.x + Start, View.y + View.h - THICKNESS, Length, THICKNESS}
-	}
-
-	n := &state.nodes[i]
-	view := inner_rect(n, n.rect)
-	content := intrinsic_size(i)
-	scroll := ScrollOffset(n.id)
-
 	for axis in ScrollAxis {
-		if axis not_in n.config.Scroll do continue
+		bar, ok := scrollbar(i, axis)
+		if !ok do continue
 
-		vertical := axis == .Vertical
-		span     := content.y if vertical else content.x
-		window   := view.h    if vertical else view.w
-		if span <= window do continue
-
-		length := max(window * window / span, THICKNESS * 2)
-		offset := (scroll.y if vertical else scroll.x)
-		start  := (window - length) * offset / (span - window)
-
-		AddRectFilled(&list, bar(view, vertical, 0, window), TRACK, Corners(THICKNESS / 2))
-		AddRectFilled(&list, bar(view, vertical, start, length), THUMB, Corners(THICKNESS / 2))
+		ends := Corners(min(bar.track.w, bar.track.h) / 2)
+		AddRectFilled(&list, bar.track, TRACK, ends)
+		AddRectFilled(&list, bar.thumb, THUMB, ends)
 	}
 }

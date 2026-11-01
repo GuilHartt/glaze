@@ -60,6 +60,16 @@ ScrollAxis :: enum u8 { Horizontal, Vertical }
 // its content can move inside the box.
 Scroll :: bit_set[ScrollAxis]
 
+// SCROLLBAR_THICKNESS is the width a scroll bar takes from the content box. It counts
+// as padding on the trailing edge of the axis the bar runs along.
+@(private)
+SCROLLBAR_THICKNESS :: f32(6)
+
+// SCROLLBAR_GAP is the space kept between the content and the bar, so the bar does not
+// touch what it scrolls.
+@(private)
+SCROLLBAR_GAP :: f32(4)
+
 // LayoutConfig is how an element is sized and how it places its children. A
 // container with `Hit` claims every hit inside its rect, including the padding
 // and the parts its children paint over.

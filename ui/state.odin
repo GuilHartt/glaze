@@ -71,11 +71,21 @@ report :: proc(Message: cstring) {
 	}
 }
 
+// ScrollDrag remembers a thumb held by the pointer, so the drag survives the pointer
+// leaving the thumb and the wheel stands down until the release.
+@(private)
+ScrollDrag :: struct {
+	id:   Id,
+	axis: ScrollAxis,
+	grab: f32,
+}
+
 State :: struct {
 	root_size: Vec2,
 	hover_id:  Id,
 	press_id:  Id,
 	click_id:  Id,
+	drag:      ScrollDrag,
 	nodes:     [dynamic]Node,
 	scopes:    [dynamic]Scope,
 	flexes:    [dynamic]Flex,
