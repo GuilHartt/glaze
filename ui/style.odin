@@ -50,15 +50,26 @@ Style :: struct {
 	Background:   Color,
 	CornerRadius: CornerRadius,
 	Border:       Border,
-	ScrollBar:    bool,
 }
 
 // ScrollAxis is one axis a box can scroll along.
 ScrollAxis :: enum u8 { Horizontal, Vertical }
 
-// Scroll is the set of axes a box scrolls along. A scrolling axis is clipped and
-// its content can move inside the box.
-Scroll :: bit_set[ScrollAxis]
+// ScrollMode is how one axis scrolls.
+ScrollMode :: enum u8 {
+	Disabled,
+	Auto,
+	Always,
+	Never,
+	Reserve,
+}
+
+// Scroll is how each axis of a box scrolls. An axis that scrolls is clipped and its
+// content can move inside the box; the mode decides whether a bar is drawn and
+// whether its strip is taken from the content.
+Scroll :: struct {
+	Horizontal, Vertical: ScrollMode,
+}
 
 // SCROLLBAR_THICKNESS is the width a scroll bar takes from the content box. It counts
 // as padding on the trailing edge of the axis the bar runs along.

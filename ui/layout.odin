@@ -297,16 +297,59 @@ intrinsic_size :: proc(i: u32) -> Vec2 #no_bounds_check {
 	return from_main(d, main, cross)
 }
 
-// padding returns the node's padding with the scroll bar strip added to the trailing
-// edge of the axes that show one, so the strip is measured and laid out exactly like
-// padding.
+// scroll_mode returns how `Axis` scrolls.
 @(private)
-padding :: proc(n: ^Node) -> Padding {
-	p := n.config.Pad
-	if n.style.ScrollBar {
-		if .Vertical in n.config.Scroll do p.Right += SCROLLBAR_THICKNESS + SCROLLBAR_GAP
-		if .Horizontal in n.config.Scroll do p.Bottom += SCROLLBAR_THICKNESS + SCROLLBAR_GAP
+scroll_mode :: #force_inline proc "contextless" (n: ^Node, Axis: ScrollAxis) -> ScrollMode {
+	return n.config.Scroll.Vertical if Axis == .Vertical else n.config.Scroll.Horizontal
+}
+
+// scrolls reports whether `Axis` moves at all, which every mode but Disabled does.
+@(private)
+scrolls :: #force_inline proc "contextless" (n: ^Node, Axis: ScrollAxis) -> bool {
+	return scroll_mode(n, Axis) != .Disabled
+}
+
+// shows_bar reports whether the bar of `Axis` is drawn. Auto and Reserve measure the
+// content against the box the node was given, which the arrangement has already set.
+@(private)
+shows_bar :: proc(n: ^Node, Axis: ScrollAxis, content: Vec2) -> bool {
+	p  := n.config.Pad
+	bw := n.style.Border.Width * 2
+
+	#partial switch scroll_mode(n, Axis) {
+	case .Always:
+		return true
+	case .Auto, .Reserve:
+		if Axis == .Vertical {
+			return content.y > max(n.rect.h - p.Top - p.Bottom - bw, 0)
+		}
+		return content.x > max(n.rect.w - p.Left - p.Right - bw, 0)
 	}
+	return false
+}
+
+// strips returns the axes whose strip is taken from the content. Reserve keeps it
+// even while the bar is hidden, so the content never moves.
+@(private)
+strips :: proc(n: ^Node, content: Vec2) -> bit_set[ScrollAxis] {
+	out: bit_set[ScrollAxis]
+
+	if scroll_mode(n, .Vertical) == .Reserve || shows_bar(n, .Vertical, content) {
+		out += {.Vertical}
+	}
+	if scroll_mode(n, .Horizontal) == .Reserve || shows_bar(n, .Horizontal, content) {
+		out += {.Horizontal}
+	}
+	return out
+}
+
+// padding returns the node's padding with the strip of a scroll bar added to the
+// trailing edge of the axes in `bar`.
+@(private)
+padding :: proc(n: ^Node, bar: bit_set[ScrollAxis]) -> Padding {
+	p := n.config.Pad
+	if .Vertical in bar   do p.Right  += SCROLLBAR_THICKNESS + SCROLLBAR_GAP
+	if .Horizontal in bar do p.Bottom += SCROLLBAR_THICKNESS + SCROLLBAR_GAP
 	return p
 }
 
@@ -314,7 +357,7 @@ padding :: proc(n: ^Node) -> Padding {
 // inside the box, then the axis sizing (fixed and min/max) resolves each axis.
 @(private="file")
 box_size :: proc(n: ^Node, content: Vec2) -> Vec2 {
-	p  := padding(n)
+	p  := padding(n, strips(n, content))
 	bw := n.style.Border.Width * 2
 	return {
 		resolve_axis(n.config.Width,  content.x + p.Left + p.Right + bw),
@@ -404,10 +447,11 @@ resolve_flex :: proc(items: []Flex, free: f32) {
 }
 
 // inner_rect returns the rect left inside a node after its padding and border, never
-// smaller than zero. The padding it uses already carries the scroll bar strip.
+// smaller than zero. The padding already carries the strips of the bars it draws.
 @(private)
-inner_rect :: proc(n: ^Node, rect: Rect) -> Rect {
-	p  := padding(n)
+inner_rect :: proc(i: u32, rect: Rect, content: Vec2) -> Rect #no_bounds_check {
+	n  := &state.nodes[i]
+	p  := padding(n, strips(n, content))
 	bw := n.style.Border.Width
 	return {
 		rect.x + p.Left + bw,
@@ -463,26 +507,26 @@ arrange :: proc(i: u32, rect: Rect) #no_bounds_check {
 		seen_ids[n.id] = i
 	}
 	if i + 1 >= n.subtree_end do return
-	arrange_children(i, inner_rect(n, rect))
+	content := intrinsic_size(i)
+	arrange_children(i, inner_rect(i, rect, content), content)
 }
 
 // arrange_children distributes the space inside `inner` among node i's children
 // and recurses into each of them. It sizes every child before recursing, since
 // recursing reuses the shared flex scratch.
 @(private)
-arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
+arrange_children :: proc(i: u32, inner: Rect, content: Vec2) #no_bounds_check {
 	n := &state.nodes[i]
 	d := n.direction
-	content := intrinsic_size(i)
 
 	// An axis that scrolls hands its children the content's size instead of the
 	// visible one, so nothing is squeezed to fit and the overflow is real.
 	main_inner := main_of(d, {inner.w, inner.h})
-	if (ScrollAxis.Vertical if d == .Column else .Horizontal) in n.config.Scroll {
+	if scrolls(n, (ScrollAxis.Vertical if d == .Column else .Horizontal)) {
 		main_inner = main_of(d, content)
 	}
 	cross_inner := cross_of(d, {inner.w, inner.h})
-	if (ScrollAxis.Horizontal if d == .Column else .Vertical) in n.config.Scroll {
+	if scrolls(n, (ScrollAxis.Horizontal if d == .Column else .Vertical)) {
 		cross_inner = cross_of(d, content)
 	}
 
@@ -498,10 +542,10 @@ arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 
 	// The offset moves only the axes that scroll, and never past the content.
 	scroll: Vec2
-	if n.config.Scroll != {} {
+	if scrolls(n, .Vertical) || scrolls(n, .Horizontal) {
 		scroll = ScrollOffset(n.id)
-		if .Horizontal not_in n.config.Scroll do scroll.x = 0
-		if .Vertical not_in n.config.Scroll do scroll.y = 0
+		if !scrolls(n, .Horizontal) do scroll.x = 0
+		if !scrolls(n, .Vertical)   do scroll.y = 0
 		scroll = {
 			clamp(scroll.x, 0, max(content.x - inner.w, 0)),
 			clamp(scroll.y, 0, max(content.y - inner.h, 0)),

@@ -485,8 +485,8 @@ draw_node :: proc(i: u32) #no_bounds_check {
 
 	n.clip = list.clip
 
-	clip := n.config.Clip || n.config.Scroll != {}
-	if clip do PushClipRect(&list, inner_rect(n, n.rect))
+	clip := n.config.Clip || scrolls(n, .Vertical) || scrolls(n, .Horizontal)
+	if clip do PushClipRect(&list, inner_rect(i, n.rect, intrinsic_size(i)))
 
 	#partial switch content in n.content {
 	case TextContent:
@@ -500,7 +500,7 @@ draw_node :: proc(i: u32) #no_bounds_check {
 	}
 
 	if clip do PopClipRect(&list)
-	if n.style.ScrollBar do draw_scrollbar(i)
+	if scrolls(n, .Vertical) || scrolls(n, .Horizontal) do draw_scrollbar(i)
 }
 
 // draw_scrollbar draws the bar of node i on every axis that has one, with the same

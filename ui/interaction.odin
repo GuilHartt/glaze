@@ -101,11 +101,11 @@ Scrollbar :: struct {
 @(private)
 scrollbar :: proc(i: u32, Axis: ScrollAxis) -> (bar: Scrollbar, ok: bool) #no_bounds_check {
 	n := &state.nodes[i]
-	if Axis not_in n.config.Scroll || !n.style.ScrollBar do return
+	content := intrinsic_size(i)
+	if !shows_bar(n, Axis, content) do return
 
 	vertical := Axis == .Vertical
-	view := inner_rect(n, n.rect)
-	content := intrinsic_size(i)
+	view := inner_rect(i, n.rect, content)
 	bar.span = content.y if vertical else content.x
 	bar.window = view.h if vertical else view.w
 	if bar.span <= 0 || bar.window <= 0 do return
@@ -138,7 +138,7 @@ scrollbar_update :: proc() {
 	if MousePressed(.Left) {
 		state.drag = {}
 		#reverse for &n, i in state.nodes {
-			if n.config.Scroll == {} do continue
+			if !scrolls(&n, .Vertical) && !scrolls(&n, .Horizontal) do continue
 
 			for axis in ScrollAxis {
 				bar, ok := scrollbar(u32(i), axis)
@@ -207,12 +207,12 @@ scroll_update :: proc() {
 
 	pos := MousePos()
 	#reverse for &n in state.nodes {
-		if n.config.Scroll == {} do continue
+		if !scrolls(&n, .Vertical) && !scrolls(&n, .Horizontal) do continue
 		if !pointer_on(&n, pos) do continue
 
 		s := ScrollOffset(n.id)
-		if .Vertical   in n.config.Scroll do s.y -= wheel.y * STEP
-		if .Horizontal in n.config.Scroll do s.x -= wheel.x * STEP
+		if scrolls(&n, .Vertical)   do s.y -= wheel.y * STEP
+		if scrolls(&n, .Horizontal) do s.x -= wheel.x * STEP
 		SetScroll(s, n.id)
 		break
 	}
