@@ -102,10 +102,10 @@ Scrollbar :: struct {
 scrollbar :: proc(i: u32, Axis: ScrollAxis) -> (bar: Scrollbar, ok: bool) #no_bounds_check {
 	n := &state.nodes[i]
 	content := n.content_size
-	if !shows_bar(n, Axis, content) do return
+	if Axis not_in n.strips do return
 
 	vertical := Axis == .Vertical
-	view := inner_rect(i, n.rect, content)
+	view := inner_rect(i, n.rect)
 	bar.span = content.y if vertical else content.x
 	bar.window = view.h if vertical else view.w
 	if bar.span <= 0 || bar.window <= 0 do return
@@ -138,7 +138,7 @@ scrollbar_update :: proc() {
 	if MousePressed(.Left) {
 		state.drag = {}
 		#reverse for &n, i in state.nodes {
-			if !scrolls(&n, .Vertical) && !scrolls(&n, .Horizontal) do continue
+			if n.strips == {} do continue
 
 			for axis in ScrollAxis {
 				bar, ok := scrollbar(u32(i), axis)

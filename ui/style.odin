@@ -96,10 +96,15 @@ LayoutConfig :: struct {
 	Hit:     bool,
 }
 
+// WrapMode is how a label breaks its text. None keeps it on one line and lets it
+// overflow, Word breaks between words, which is what the web does by default.
+WrapMode :: enum u8 { None, Word }
+
 // TextConfig is how a text leaf paints.
 TextConfig :: struct {
 	Color: Color,
 	Size:  f32,
+	Wrap:  WrapMode,
 }
 
 // ImageConfig is how an image leaf paints.

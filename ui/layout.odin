@@ -28,6 +28,7 @@ Node :: struct {
 	direction:    Direction,
 	base:         Vec2,
 	content_size: Vec2,
+	strips:       bit_set[ScrollAxis],
 	rect:         Rect,
 	clip:         Rect,
 	content:      Content,
@@ -39,7 +40,8 @@ Node :: struct {
 TextContent :: struct {
 	text:   cstring,
 	font:   Font,
-	config: TextConfig
+	config: TextConfig,
+	lines:  []Line,
 }
 
 ImageContent :: struct {
@@ -61,6 +63,8 @@ Begin :: proc() {
 	scroll_update()
 	clear(&state.nodes)
 	clear(&state.scopes)
+	label_purge()
+	state.frame += 1
 	when CHECKS {
 		clear(&seen_ids)
 	}
@@ -155,10 +159,11 @@ Label :: proc(
 	Color: Color = {255, 255, 255, 255},
 	Size:  f32 = 16,
 	Font:  Font = 0,
+	Wrap:  WrapMode = .None,
 ) -> Id #no_bounds_check {
 	node_id := Open()
 	state.nodes[len(state.nodes)-1].content = TextContent{
-		text = Text, font = Font, config = TextConfig{Color = Color, Size = Size},
+		text = Text, font = Font, config = TextConfig{Color = Color, Size = Size, Wrap = Wrap},
 	}
 	Close()
 	return node_id
@@ -263,22 +268,36 @@ resolve_axis :: proc(s: Sizing, content: f32) -> f32 {
 // measure computes a node's content size, bottom up: a container's natural size is
 // the sum of what its children already measured to, so the recursion has to reach the
 // leaves before it can answer. The result stays on the node, so arranging and drawing
-// read it instead of walking the children again.
+// read it instead of walking the children again. `Avail` is the width the parent has
+// to offer, which a fixed box narrows to its own, and which is what a label wraps
+// against.
 @(private="file")
-measure :: proc(i: u32) #no_bounds_check {
+measure :: proc(i: u32, Avail: f32) #no_bounds_check {
 	n := &state.nodes[i]
 	d := n.direction
 	main, cross: f32
 	count := 0
 
-	#partial switch content in n.content {
-	case TextContent:
-		n.content_size = MeasureText(content.text, content.font, content.config.Size)
-	case ImageContent:
-		n.content_size = content.config.Size
-	case:
+	child_avail := Avail
+	if n.config.Width.Kind == .Fixed {
+		child_avail = max(n.config.Width.Basis - n.config.Pad.Left - n.config.Pad.Right - n.style.Border.Width*2, 0)
+	}
+
+	// A vertical bar takes its strip out of the width, so children wrap inside what is
+	// left and no glyph lands under the bar.
+	if strip_reserved(n, .Vertical) {
+		child_avail = max(child_avail - (SCROLLBAR_THICKNESS + SCROLLBAR_GAP), 0)
+	}
+
+	if text, ok := &n.content.(TextContent); ok {
+		wrap: f32
+		if text.config.Wrap != .None do wrap = child_avail
+		n.content_size, text.lines = label_measure(text^, wrap)
+	} else if image, ok := &n.content.(ImageContent); ok {
+		n.content_size = image.config.Size
+	} else {
 		for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
-			measure(c)
+			measure(c, child_avail)
 			base := state.nodes[c].base
 			main += main_of(d, base)
 			cross = max(cross, cross_of(d, base))
@@ -334,6 +353,21 @@ strips :: proc(n: ^Node, content: Vec2) -> bit_set[ScrollAxis] {
 		out += {.Horizontal}
 	}
 	return out
+}
+
+// strip_reserved reports whether the strip of `Axis` is out of the content for the
+// children about to be measured. Always and Reserve answer without looking at the
+// content, so only Auto reads the strips the node took in the frame that just ended,
+// which is the only place that answer can come from.
+@(private)
+strip_reserved :: proc(n: ^Node, Axis: ScrollAxis) -> bool {
+	#partial switch scroll_mode(n, Axis) {
+	case .Always, .Reserve:
+		return true
+	case .Auto:
+		return Axis in Storage(n.id, bit_set[ScrollAxis])^
+	}
+	return false
 }
 
 // padding returns the node's padding with the strip of a scroll bar added to the
@@ -442,9 +476,9 @@ resolve_flex :: proc(items: []Flex, free: f32) {
 // inner_rect returns the rect left inside a node after its padding and border, never
 // smaller than zero. The padding already carries the strips of the bars it draws.
 @(private)
-inner_rect :: proc(i: u32, rect: Rect, content: Vec2) -> Rect #no_bounds_check {
+inner_rect :: proc(i: u32, rect: Rect) -> Rect #no_bounds_check {
 	n  := &state.nodes[i]
-	p  := padding(n, strips(n, content))
+	p  := padding(n, n.strips)
 	bw := n.style.Border.Width
 	return {
 		rect.x + p.Left + bw,
@@ -500,8 +534,14 @@ arrange :: proc(i: u32, rect: Rect) #no_bounds_check {
 		seen_ids[n.id] = i
 	}
 	if i + 1 >= n.subtree_end do return
+
 	content := n.content_size
-	arrange_children(i, inner_rect(i, rect, content), content)
+	n.strips = strips(n, content)
+
+	// The node is rebuilt every frame, so the answer Auto needs before measuring the
+	// next one has to survive outside it.
+	Storage(n.id, bit_set[ScrollAxis])^ = n.strips
+	arrange_children(i, inner_rect(i, rect), content)
 }
 
 // arrange_children distributes the space inside `inner` among node i's children
@@ -563,7 +603,7 @@ arrange_children :: proc(i: u32, inner: Rect, content: Vec2) #no_bounds_check {
 
 @(private="file")
 layout :: proc() {
-	measure(0)
+	measure(0, state.root_size.x)
 	arrange(0, Rect{0, 0, state.root_size.x, state.root_size.y})
 }
 

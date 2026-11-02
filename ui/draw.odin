@@ -177,7 +177,15 @@ AddRegularPolygonStroke :: proc(
 
 // AddText appends `Text` with its top left corner at `Pos`.
 AddText :: proc(List: ^DrawList, Pos: Vec2, Text: cstring, Tint: Color, Font: Font = 0, Size: f32 = 16) {
-	if Text == nil || len(font_ctx.fonts) == 0 || Size <= 0 do return
+	if Text == nil do return
+	add_text_run(List, Pos, string(Text), Tint, Font, Size)
+}
+
+// add_text_run appends a run that needs no terminator, so a wrapped line is drawn as
+// the slice of the source it already is.
+@(private="file")
+add_text_run :: proc(List: ^DrawList, Pos: Vec2, Run: string, Tint: Color, Font: Font, Size: f32) {
+	if len(Run) == 0 || len(font_ctx.fonts) == 0 || Size <= 0 do return
 
 	fontstash.SetFont(&font_ctx, int(Font))
 	fontstash.SetSize(&font_ctx, Size)
@@ -187,7 +195,7 @@ AddText :: proc(List: ^DrawList, Pos: Vec2, Text: cstring, Tint: Color, Font: Fo
 	previous := List.texture
 	List.texture = atlas_texture
 
-	iter := fontstash.TextIterInit(&font_ctx, Pos.x, Pos.y, string(Text))
+	iter := fontstash.TextIterInit(&font_ctx, Pos.x, Pos.y, Run)
 	quad: fontstash.Quad
 	for fontstash.TextIterNext(&font_ctx, &iter, &quad) {
 		append_quad(List, quad.x0, quad.y0, quad.x1, quad.y1, {quad.s0, quad.t0}, {quad.s1, quad.t1}, Tint)
@@ -485,12 +493,25 @@ draw_node :: proc(i: u32) #no_bounds_check {
 
 	n.clip = list.clip
 
-	clip := n.config.Clip || scrolls(n, .Vertical) || scrolls(n, .Horizontal)
-	if clip do PushClipRect(&list, inner_rect(i, n.rect, n.content_size))
+	clip := n.config.Clip || n.strips != {}
+	if clip do PushClipRect(&list, inner_rect(i, n.rect))
 
 	#partial switch content in n.content {
 	case TextContent:
-		AddText(&list, {n.rect.x, n.rect.y}, content.text, content.config.Color, content.font, content.config.Size)
+		text_lines := content.lines
+		if len(text_lines) == 0 do break
+
+		line_height := n.content_size.y / f32(len(text_lines))
+		for line, index in text_lines {
+			add_text_run(
+				&list,
+				{n.rect.x, n.rect.y + line_height * f32(index)},
+				string(content.text)[line.Start:line.End],
+				content.config.Color,
+				content.font,
+				content.config.Size,
+			)
+		}
 	}
 
 	if n.draw != nil do n.draw(n.rect, &list, n.id)
@@ -500,7 +521,7 @@ draw_node :: proc(i: u32) #no_bounds_check {
 	}
 
 	if clip do PopClipRect(&list)
-	if scrolls(n, .Vertical) || scrolls(n, .Horizontal) do draw_scrollbar(i)
+	if n.strips != {} do draw_scrollbar(i)
 }
 
 // draw_scrollbar draws the bar of node i on every axis that has one, with the same
