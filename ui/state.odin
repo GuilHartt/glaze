@@ -15,11 +15,11 @@ Scope :: struct {
 	node:  u32,
 }
 
-// Entry is one stored value: its bytes live on the heap, so the pointer stays
-// valid across frames and across growth of the map.
+// StorageKey identifies one stored value: the id it belongs to and its type. One
+// element can keep several values at once, as long as their types differ.
 @(private="file")
-Entry :: struct {
-	ptr:  rawptr,
+StorageKey :: struct {
+	id:   Id,
 	type: typeid,
 }
 
@@ -89,7 +89,7 @@ State :: struct {
 	nodes:     [dynamic]Node,
 	scopes:    [dynamic]Scope,
 	flexes:    [dynamic]Flex,
-	storage:   map[Id]Entry,
+	storage:   map[StorageKey]rawptr,
 }
 
 @(private)
@@ -107,16 +107,14 @@ ViewportSize :: proc() -> Vec2 {
 }
 
 // Storage returns the `T` stored under `Id`, allocating a zero value the first
-// time the id is seen. Widgets keep their state here, keyed by their own id.
+// time that id asks for that type. Widgets keep their state here, keyed by their own
+// id, and one element may hold as many types as it needs.
 Storage :: proc(Id: Id, $T: typeid) -> ^T {
-	if entry, ok := state.storage[Id]; ok {
-		if entry.type != T {
-			report("ui: the same id was stored with two different types")
-		}
-		return (^T)(entry.ptr)
-	}
+	key := StorageKey{id = Id, type = T}
+	if ptr, ok := state.storage[key]; ok do return (^T)(ptr)
+
 	ptr := new(T)
-	state.storage[Id] = {ptr = ptr, type = T}
+	state.storage[key] = ptr
 	return ptr
 }
 
