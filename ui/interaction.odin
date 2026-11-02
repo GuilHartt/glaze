@@ -101,7 +101,7 @@ Scrollbar :: struct {
 @(private)
 scrollbar :: proc(i: u32, Axis: ScrollAxis) -> (bar: Scrollbar, ok: bool) #no_bounds_check {
 	n := &state.nodes[i]
-	content := intrinsic_size(i)
+	content := n.content_size
 	if !shows_bar(n, Axis, content) do return
 
 	vertical := Axis == .Vertical

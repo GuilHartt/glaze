@@ -23,16 +23,17 @@ RectIntersect :: #force_inline proc "contextless" (A, B: Rect) -> Rect {
 }
 
 Node :: struct {
-	config:      LayoutConfig,
-	style:       Style,
-	direction:   Direction,
-	base:        Vec2,
-	rect:        Rect,
-	clip:        Rect,
-	content:     Content,
-	id:          Id,
-	subtree_end: u32,
-	draw:        DrawProc,
+	config:       LayoutConfig,
+	style:        Style,
+	direction:    Direction,
+	base:         Vec2,
+	content_size: Vec2,
+	rect:         Rect,
+	clip:         Rect,
+	content:      Content,
+	id:           Id,
+	subtree_end:  u32,
+	draw:         DrawProc,
 }
 
 TextContent :: struct {
@@ -259,42 +260,34 @@ resolve_axis :: proc(s: Sizing, content: f32) -> f32 {
 	return v
 }
 
-// measure_pass computes every node's base size, bottom-up. A node's children
-// always come after it in the DFS pre-order array, so iterating backwards
-// measures children before their parent.
+// measure computes a node's content size, bottom up: a container's natural size is
+// the sum of what its children already measured to, so the recursion has to reach the
+// leaves before it can answer. The result stays on the node, so arranging and drawing
+// read it instead of walking the children again.
 @(private="file")
-measure_pass :: proc() #no_bounds_check {
-	for i := len(state.nodes) - 1; i >= 0; i -= 1 {
-		n := &state.nodes[i]
-		n.base = box_size(n, intrinsic_size(u32(i)))
-	}
-}
-
-// intrinsic_size returns the natural size of a node's content, before padding,
-// border and sizing are applied. For a leaf it is the measured text or the image
-// size; for a container, the sum of its children along the main axis (plus gaps)
-// and the largest of them along the cross axis.
-@(private)
-intrinsic_size :: proc(i: u32) -> Vec2 #no_bounds_check {
+measure :: proc(i: u32) #no_bounds_check {
 	n := &state.nodes[i]
-	#partial switch content in n.content {
-		case TextContent:
-			return MeasureText(content.text, content.font, content.config.Size)
-		case ImageContent:
-			return content.config.Size
-	}
-
 	d := n.direction
 	main, cross: f32
 	count := 0
-	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
-		base := state.nodes[c].base
-		main += main_of(d, base)
-		cross = max(cross, cross_of(d, base))
-		count += 1
+
+	#partial switch content in n.content {
+	case TextContent:
+		n.content_size = MeasureText(content.text, content.font, content.config.Size)
+	case ImageContent:
+		n.content_size = content.config.Size
+	case:
+		for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
+			measure(c)
+			base := state.nodes[c].base
+			main += main_of(d, base)
+			cross = max(cross, cross_of(d, base))
+			count += 1
+		}
+		if count > 1 do main += n.config.Gap * f32(count - 1)
+		n.content_size = from_main(d, main, cross)
 	}
-	if count > 1 do main += n.config.Gap * f32(count - 1)
-	return from_main(d, main, cross)
+	n.base = box_size(n, n.content_size)
 }
 
 // scroll_mode returns how `Axis` scrolls.
@@ -507,7 +500,7 @@ arrange :: proc(i: u32, rect: Rect) #no_bounds_check {
 		seen_ids[n.id] = i
 	}
 	if i + 1 >= n.subtree_end do return
-	content := intrinsic_size(i)
+	content := n.content_size
 	arrange_children(i, inner_rect(i, rect, content), content)
 }
 
@@ -570,7 +563,7 @@ arrange_children :: proc(i: u32, inner: Rect, content: Vec2) #no_bounds_check {
 
 @(private="file")
 layout :: proc() {
-	measure_pass()
+	measure(0)
 	arrange(0, Rect{0, 0, state.root_size.x, state.root_size.y})
 }
 
