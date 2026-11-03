@@ -137,13 +137,13 @@ pad_xy :: #force_inline proc(X, Y: f32) -> Padding {
 
 // Grow returns a sizing whose base is the content size, expanding to take a
 // `Weight`-proportional share of the parent's leftover space.
-Grow :: #force_inline proc "contextless" (Weight: f32 = 1, Shrink: f32 = 0) -> Sizing {
+Grow :: #force_inline proc "contextless" (Weight: f32 = 1, Shrink: f32 = 1) -> Sizing {
 	return {Kind = .Fit, Grow = Weight, Shrink = Shrink}
 }
 
 // Fill returns a sizing whose base is zero and that divides the parent's space
 // by `Weight` (ignoring content). Use it for equal-sized children.
-Fill :: #force_inline proc "contextless" (Weight: f32 = 1, Shrink: f32 = 0) -> Sizing {
+Fill :: #force_inline proc "contextless" (Weight: f32 = 1, Shrink: f32 = 1) -> Sizing {
 	return {Kind = .Fixed, Grow = Weight, Shrink = Shrink}
 }
 

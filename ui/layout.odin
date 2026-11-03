@@ -215,39 +215,23 @@ id_mix :: #force_inline proc(seed: Id, n: u32) -> Id {
 	return Id(h)
 }
 
-// In a Row the main axis is horizontal and the cross axis is vertical; in a
-// Column they are swapped. These helpers move a value between the two frames,
-// so the layout passes below never mention a direction directly.
+// A layout axis is a ScrollAxis: Horizontal is X and Vertical is Y. A Row lays its
+// children out along X and a Column along Y, and the other axis is the cross axis.
+
 @(private="file")
-main_of :: #force_inline proc(d: Direction, v: Vec2) -> f32 {
-	return v.x if d == .Row else v.y
+sizing_of :: #force_inline proc(c: LayoutConfig, A: ScrollAxis) -> Sizing {
+	return c.Width if A == .Horizontal else c.Height
 }
 
 @(private="file")
-cross_of :: #force_inline proc(d: Direction, v: Vec2) -> f32 {
-	return v.y if d == .Row else v.x
+along :: #force_inline proc(v: Vec2, A: ScrollAxis) -> f32 {
+	return v.x if A == .Horizontal else v.y
 }
 
 @(private="file")
-from_main :: #force_inline proc(d: Direction, main, cross: f32) -> Vec2 {
-	return {main, cross} if d == .Row else {cross, main}
+size_along :: #force_inline proc(r: Rect, A: ScrollAxis) -> f32 {
+	return r.w if A == .Horizontal else r.h
 }
-
-@(private="file")
-main_sizing :: #force_inline proc(d: Direction, c: LayoutConfig) -> Sizing {
-	return c.Width if d == .Row else c.Height
-}
-
-@(private="file")
-cross_sizing :: #force_inline proc(d: Direction, c: LayoutConfig) -> Sizing {
-	return c.Height if d == .Row else c.Width
-}
-
-// The layout passes index `state.nodes` only through indices known to be inside
-// it: a node's children precede its `subtree_end`, which never exceeds
-// len(nodes), and Open appends before any access. That invariant lets the passes
-// below drop bounds checks; a broken invariant turns into memory access rather
-// than a panic, so keep it.
 
 // next_sibling returns the index just past the current node's subtree, which is
 // the next sibling in the flat, DFS pre-order node array.
@@ -263,50 +247,6 @@ resolve_axis :: proc(s: Sizing, content: f32) -> f32 {
 	if s.Min != 0 do v = max(v, s.Min)
 	if s.Max != 0 do v = min(v, s.Max)
 	return v
-}
-
-// measure computes a node's content size, bottom up: a container's natural size is
-// the sum of what its children already measured to, so the recursion has to reach the
-// leaves before it can answer. The result stays on the node, so arranging and drawing
-// read it instead of walking the children again. `Avail` is the width the parent has
-// to offer, which a fixed box narrows to its own, and which is what a label wraps
-// against.
-@(private="file")
-measure :: proc(i: u32, Avail: f32) #no_bounds_check {
-	n := &state.nodes[i]
-	d := n.direction
-	main, cross: f32
-	count := 0
-
-	child_avail := Avail
-	if n.config.Width.Kind == .Fixed {
-		child_avail = max(n.config.Width.Basis - n.config.Pad.Left - n.config.Pad.Right - n.style.Border.Width*2, 0)
-	}
-
-	// A vertical bar takes its strip out of the width, so children wrap inside what is
-	// left and no glyph lands under the bar.
-	if strip_reserved(n, .Vertical) {
-		child_avail = max(child_avail - (SCROLLBAR_THICKNESS + SCROLLBAR_GAP), 0)
-	}
-
-	if text, ok := &n.content.(TextContent); ok {
-		wrap: f32
-		if text.config.Wrap != .None do wrap = child_avail
-		n.content_size, text.lines = label_measure(text^, wrap)
-	} else if image, ok := &n.content.(ImageContent); ok {
-		n.content_size = image.config.Size
-	} else {
-		for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
-			measure(c, child_avail)
-			base := state.nodes[c].base
-			main += main_of(d, base)
-			cross = max(cross, cross_of(d, base))
-			count += 1
-		}
-		if count > 1 do main += n.config.Gap * f32(count - 1)
-		n.content_size = from_main(d, main, cross)
-	}
-	n.base = box_size(n, n.content_size)
 }
 
 // scroll_mode returns how `Axis` scrolls.
@@ -355,10 +295,9 @@ strips :: proc(n: ^Node, content: Vec2) -> bit_set[ScrollAxis] {
 	return out
 }
 
-// strip_reserved reports whether the strip of `Axis` is out of the content for the
-// children about to be measured. Always and Reserve answer without looking at the
-// content, so only Auto reads the strips the node took in the frame that just ended,
-// which is the only place that answer can come from.
+// strip_reserved reports whether the strip of `Axis` is out of the content for this
+// frame. Always and Reserve answer without looking at the content, so only Auto reads
+// the answer the arrangement stored in the frame that just ended.
 @(private)
 strip_reserved :: proc(n: ^Node, Axis: ScrollAxis) -> bool {
 	#partial switch scroll_mode(n, Axis) {
@@ -380,16 +319,13 @@ padding :: proc(n: ^Node, bar: bit_set[ScrollAxis]) -> Padding {
 	return p
 }
 
-// box_size applies the box model to a content size: padding and border sit
-// inside the box, then the axis sizing (fixed and min/max) resolves each axis.
+// inset returns the space padding and border take around a node's content, along
+// each axis, with the strips it keeps.
 @(private="file")
-box_size :: proc(n: ^Node, content: Vec2) -> Vec2 {
-	p  := padding(n, strips(n, content))
+inset :: proc(n: ^Node) -> Vec2 {
+	p  := padding(n, n.strips)
 	bw := n.style.Border.Width * 2
-	return {
-		resolve_axis(n.config.Width,  content.x + p.Left + p.Right + bw),
-		resolve_axis(n.config.Height, content.y + p.Top  + p.Bottom + bw),
-	}
+	return {p.Left + p.Right + bw, p.Top + p.Bottom + bw}
 }
 
 // Flex is a child's record during main-axis distribution: its base size, its
@@ -407,17 +343,17 @@ Flex :: struct {
 }
 
 // collect_flex gathers the direct children of node i into the reused scratch,
-// recording each one's base main size and flexibility.
+// recording each one's base size along `A` and its flexibility there.
 @(private="file")
-collect_flex :: proc(i: u32) -> []Flex #no_bounds_check {
+collect_flex :: proc(i: u32, A: ScrollAxis) -> []Flex #no_bounds_check {
 	n := &state.nodes[i]
 	clear(&state.flexes)
 	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
 		child := &state.nodes[c]
-		s := main_sizing(n.direction, child.config)
+		s := sizing_of(child.config, A)
 		append(&state.flexes, Flex{
 			node   = c,
-			base   = main_of(n.direction, child.base),
+			base   = along(child.base, A),
 			grow   = s.Grow,
 			shrink = s.Shrink,
 			min    = s.Min,
@@ -493,40 +429,137 @@ inner_rect :: proc(i: u32, rect: Rect) -> Rect #no_bounds_check {
 @(private="file")
 justify :: proc(j: Justify, free: f32, count: int) -> (offset, gap: f32) {
 	#partial switch j {
-		case .Center: offset = free / 2
-		case .End:    offset = free
-		case .SpaceBetween: if count > 1 do gap = free / f32(count - 1)
+	case .Center:       offset = free / 2
+	case .End:          offset = free
+	case .SpaceBetween: if count > 1 do gap = free / f32(count - 1)
 	}
 	return
 }
 
-// cross_axis resolves a child's size and offset along the container's cross
-// axis: it fills the axis when the child grows there, or when the container
-// stretches and the child did not fix its size; otherwise it is aligned.
+// gaps returns the space the gaps between `count` children take along the main axis.
 @(private="file")
-cross_axis :: proc(n: ^Node, child: ^Node, cross_inner: f32, d: Direction) -> (size, pos: f32) {
-	s := cross_sizing(d, child.config)
+gaps :: #force_inline proc(n: ^Node, count: int) -> f32 {
+	return n.config.Gap * f32(max(count - 1, 0))
+}
+
+// children_space returns the length the children share along `A`. A node that scrolls
+// that axis hands them its content length, so the overflow is real instead of squeezed.
+@(private="file")
+children_space :: proc(n: ^Node, A: ScrollAxis, inner: f32) -> f32 {
+	if scrolls(n, A) do return along(n.content_size, A)
+	return inner
+}
+
+// cross_size resolves a child's size along an axis its parent does not lay out. The
+// child fills the space when it grows there, or when the parent stretches a child that
+// fits its content, and a wrapping text never runs past the space it was given.
+@(private="file")
+cross_size :: proc(n: ^Node, child: ^Node, space: f32, A: ScrollAxis) -> f32 {
+	s := sizing_of(child.config, A)
+	size := along(child.base, A)
 	if s.Grow > 0 || (n.config.Align == .Stretch && s.Kind == .Fit) {
-		size = cross_inner
-	} else {
-		size = cross_of(d, child.base)
+		size = space
+	} else if text, ok := &child.content.(TextContent); ok && text.config.Wrap != .None && s.Kind == .Fit {
+		size = min(size, space)
 	}
 	if s.Min != 0 do size = max(size, s.Min)
 	if s.Max != 0 do size = min(size, s.Max)
-
-	#partial switch n.config.Align {
-		case .Center: pos = (cross_inner - size) / 2
-		case .End:    pos = cross_inner - size
-	}
-	return
+	return size
 }
 
-// arrange assigns node i its final rect and lays out its subtree, top-down: a
-// node's rect must be known before its children can be sized.
+// measure_width gives every node its intrinsic width, bottom up, before any width is
+// known. A text leaf measures unwrapped, so its width is its longest line, and a
+// container adds its children up along a Row and takes the widest one in a Column.
 @(private="file")
-arrange :: proc(i: u32, rect: Rect) #no_bounds_check {
+measure_width :: proc(i: u32) #no_bounds_check {
 	n := &state.nodes[i]
-	n.rect = rect
+	n.strips = {}
+	if strip_reserved(n, .Vertical) do n.strips += {.Vertical}
+	if strip_reserved(n, .Horizontal) do n.strips += {.Horizontal}
+
+	switch &content in n.content {
+	case TextContent:
+		n.content_size, content.lines = label_measure(content, 0)
+	case ImageContent:
+		n.content_size = content.config.Size
+	case:
+		sum, widest: f32
+		count := 0
+		for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
+			measure_width(c)
+			w := state.nodes[c].base.x
+			sum += w
+			widest = max(widest, w)
+			count += 1
+		}
+		n.content_size.x = sum + gaps(n, count) if n.direction == .Row else widest
+	}
+	n.base.x = resolve_axis(n.config.Width, n.content_size.x + inset(n).x)
+}
+
+// layout_width fixes the width of node i to the one its parent gave it, then shares the
+// inner width among its children: a Row splits it along X by flex, a Column gives each
+// child its cross size. Each child's width is final before its own children are placed,
+// so a text can wrap against it later.
+@(private="file")
+layout_width :: proc(i: u32, Width: f32) #no_bounds_check {
+	n := &state.nodes[i]
+	n.rect.w = Width
+	if i + 1 >= n.subtree_end do return
+
+	space := children_space(n, .Horizontal, max(Width - inset(n).x, 0))
+	if n.direction == .Row {
+		items := collect_flex(i, .Horizontal)
+		base_sum: f32
+		for it in items do base_sum += it.base
+		resolve_flex(items, space - base_sum - gaps(n, len(items)))
+		for it in items do state.nodes[it.node].rect.w = it.size
+	} else {
+		for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
+			child := &state.nodes[c]
+			child.rect.w = cross_size(n, child, space, .Horizontal)
+		}
+	}
+
+	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
+		layout_width(c, state.nodes[c].rect.w)
+	}
+}
+
+// measure_height gives every node its intrinsic height, bottom up, once every width is
+// final. A wrapping text breaks its lines against the width it was given, so its height
+// is the height of those lines. A container stacks its children along a Column and takes
+// the tallest one in a Row.
+@(private="file")
+measure_height :: proc(i: u32) #no_bounds_check {
+	n := &state.nodes[i]
+	switch &content in n.content {
+	case TextContent:
+		if content.config.Wrap != .None {
+			n.content_size, content.lines = label_measure(content, max(n.rect.w - inset(n).x, 0))
+		}
+	case ImageContent:
+	case:
+		sum, tallest: f32
+		count := 0
+		for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
+			measure_height(c)
+			h := state.nodes[c].base.y
+			sum += h
+			tallest = max(tallest, h)
+			count += 1
+		}
+		n.content_size.y = sum + gaps(n, count) if n.direction == .Column else tallest
+	}
+	n.base.y = resolve_axis(n.config.Height, n.content_size.y + inset(n).y)
+}
+
+// arrange places node i and its subtree, top-down. Its width and position come from its
+// parent, so this pass resolves the heights along a Column, places each child, and writes
+// the scroll bar state the next frame's Auto answers come from.
+@(private="file")
+arrange :: proc(i: u32) #no_bounds_check {
+	n := &state.nodes[i]
 	when CHECKS {
 		if previous, seen := seen_ids[n.id]; seen {
 			report(fmt.ctprintf("ui: duplicate element id at node %v and node %v", previous, i))
@@ -535,43 +568,45 @@ arrange :: proc(i: u32, rect: Rect) #no_bounds_check {
 	}
 	if i + 1 >= n.subtree_end do return
 
-	content := n.content_size
-	n.strips = strips(n, content)
-
 	// The node is rebuilt every frame, so the answer Auto needs before measuring the
 	// next one has to survive outside it.
-	Storage(n.id, bit_set[ScrollAxis])^ = n.strips
-	arrange_children(i, inner_rect(i, rect), content)
+	Storage(n.id, bit_set[ScrollAxis])^ = strips(n, n.content_size)
+	arrange_children(i, inner_rect(i, n.rect))
 }
 
-// arrange_children distributes the space inside `inner` among node i's children
-// and recurses into each of them. It sizes every child before recursing, since
-// recursing reuses the shared flex scratch.
-@(private)
-arrange_children :: proc(i: u32, inner: Rect, content: Vec2) #no_bounds_check {
+// arrange_children sizes the children of node i along its main axis, where a Column
+// resolves heights by flex, and along its cross axis, where a Row resolves heights.
+// Then it places each child and arranges its subtree. The widths of a Row and the cross
+// widths of a Column were already fixed by layout_width.
+@(private="file")
+arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 	n := &state.nodes[i]
-	d := n.direction
+	main: ScrollAxis = .Horizontal if n.direction == .Row else .Vertical
+	cross: ScrollAxis = .Vertical if main == .Horizontal else .Horizontal
+	space_main := children_space(n, main, along({inner.w, inner.h}, main))
+	space_cross := children_space(n, cross, along({inner.w, inner.h}, cross))
 
-	// An axis that scrolls hands its children the content's size instead of the
-	// visible one, so nothing is squeezed to fit and the overflow is real.
-	main_inner := main_of(d, {inner.w, inner.h})
-	if scrolls(n, (ScrollAxis.Vertical if d == .Column else .Horizontal)) {
-		main_inner = main_of(d, content)
+	if main == .Vertical {
+		items := collect_flex(i, .Vertical)
+		base_sum: f32
+		for it in items do base_sum += it.base
+		resolve_flex(items, space_main - base_sum - gaps(n, len(items)))
+		for it in items do state.nodes[it.node].rect.h = it.size
+	} else {
+		for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
+			child := &state.nodes[c]
+			child.rect.h = cross_size(n, child, space_cross, .Vertical)
+		}
 	}
-	cross_inner := cross_of(d, {inner.w, inner.h})
-	if scrolls(n, (ScrollAxis.Horizontal if d == .Column else .Vertical)) {
-		cross_inner = cross_of(d, content)
+
+	used: f32
+	count := 0
+	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
+		used += size_along(state.nodes[c].rect, main)
+		count += 1
 	}
-
-	items := collect_flex(i)
-	base_sum: f32
-	for it in items do base_sum += it.base
-	free := main_inner - base_sum - n.config.Gap * f32(max(len(items)-1, 0))
-	resolve_flex(items, free)
-
-	used := n.config.Gap * f32(max(len(items)-1, 0))
-	for it in items do used += it.size
-	offset, extra := justify(n.config.Justify, main_inner - used, len(items))
+	used += gaps(n, count)
+	offset, extra := justify(n.config.Justify, space_main - used, count)
 
 	// The offset moves only the axes that scroll, and never past the content.
 	scroll: Vec2
@@ -580,30 +615,36 @@ arrange_children :: proc(i: u32, inner: Rect, content: Vec2) #no_bounds_check {
 		if !scrolls(n, .Horizontal) do scroll.x = 0
 		if !scrolls(n, .Vertical)   do scroll.y = 0
 		scroll = {
-			clamp(scroll.x, 0, max(content.x - inner.w, 0)),
-			clamp(scroll.y, 0, max(content.y - inner.h, 0)),
+			clamp(scroll.x, 0, max(n.content_size.x - inner.w, 0)),
+			clamp(scroll.y, 0, max(n.content_size.y - inner.h, 0)),
 		}
 		SetScroll(scroll, n.id)
 	}
 
 	cursor := offset
-	for it in items {
-		child := &state.nodes[it.node]
-		cross_size, cross_pos := cross_axis(n, child, cross_inner, d)
-		size := from_main(d, it.size, cross_size)
-		pos  := from_main(d, cursor, cross_pos)
-		child.rect = Rect{inner.x + pos.x - scroll.x, inner.y + pos.y - scroll.y, size.x, size.y}
-		cursor += it.size + n.config.Gap + extra
-	}
-
 	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
-		arrange(c, state.nodes[c].rect)
+		child := &state.nodes[c]
+		at: f32
+		#partial switch n.config.Align {
+		case .Center: at = (space_cross - size_along(child.rect, cross)) / 2
+		case .End:    at = space_cross - size_along(child.rect, cross)
+		}
+		pos := Vec2{cursor, at} if main == .Horizontal else Vec2{at, cursor}
+		child.rect.x = inner.x + pos.x - scroll.x
+		child.rect.y = inner.y + pos.y - scroll.y
+		cursor += size_along(child.rect, main) + n.config.Gap + extra
+		arrange(c)
 	}
 }
 
+// layout runs the passes that size and place the frame, in the order CSS does: intrinsic
+// widths from the inside out, final widths from the outside in, heights from the inside out
+// once the widths are known, and finally positions from the outside in.
 @(private="file")
 layout :: proc() {
-	measure(0, state.root_size.x)
-	arrange(0, Rect{0, 0, state.root_size.x, state.root_size.y})
+	measure_width(0)
+	layout_width(0, state.root_size.x)
+	measure_height(0)
+	state.nodes[0].rect = Rect{0, 0, state.root_size.x, state.root_size.y}
+	arrange(0)
 }
-
