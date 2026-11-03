@@ -24,11 +24,12 @@ Line :: struct {
 TEXT_CACHE :: #config(glaze_text_cache, true)
 
 // LabelKey is what a wrapped result depends on: the words themselves, and the font,
-// size and width they were broken for. Text that matches shares one entry.
+// size, mode and width they were broken for. Text that matches shares one entry.
 LabelKey :: struct {
 	text:  string,
 	font:  Font,
 	size:  f32,
+	mode:  WrapMode,
 	width: f32,
 }
 
@@ -44,11 +45,11 @@ LabelCache :: struct {
 @(private="file")
 label_cache: map[LabelKey]LabelCache
 
-// WrapText breaks `Text` into lines that fit `MaxWidth`, measuring with `Font` at
+// WrapText breaks `Text` into lines according to `Mode`, measuring with `Font` at
 // `Size`. A line is a byte range in the source, so no text is copied, and the result
-// is valid until the next call. A `MaxWidth` of zero or less never breaks, so only
-// explicit newlines split the text.
-WrapText :: proc(Text: cstring, Font: Font, Size: f32, MaxWidth: f32) -> []Line {
+// is valid until the next call. Every mode breaks at the newlines, and only Word
+// breaks by `MaxWidth` as well.
+WrapText :: proc(Text: cstring, Font: Font, Size: f32, Mode: WrapMode, MaxWidth: f32) -> []Line {
 	clear(&lines)
 	if Text == nil || Size <= 0 do return lines[:]
 
@@ -56,10 +57,11 @@ WrapText :: proc(Text: cstring, Font: Font, Size: f32, MaxWidth: f32) -> []Line 
 	fontstash.SetSize(&font_ctx, Size)
 
 	src, space := string(Text), measure(" ")
+	limit := MaxWidth if Mode == .Word else f32(0)
 	start: int
 	for i in 0 ..= len(src) {
 		if i < len(src) && src[i] != '\n' do continue
-		wrap_paragraph(src[start:i], start, MaxWidth, space)
+		wrap_paragraph(src[start:i], start, limit, space)
 		start = i + 1
 	}
 	return lines[:]
@@ -83,7 +85,13 @@ label_measure :: proc(Content: TextContent, Width: f32) -> (block: Vec2, broken:
 // and marks it as used in the current frame.
 @(private="file")
 cached_label :: proc(Content: TextContent, Width: f32) -> ^LabelCache {
-	key := LabelKey{text = string(Content.text), font = Content.font, size = Content.config.Size, width = Width}
+	key := LabelKey{
+		text  = string(Content.text),
+		font  = Content.font,
+		size  = Content.config.Size,
+		mode  = Content.config.Wrap,
+		width = Width,
+	}
 
 	if cached, ok := &label_cache[key]; ok {
 		cached.frame = state.frame
@@ -121,7 +129,7 @@ label_purge :: proc() {
 @(private="file")
 wrap_block :: proc(Content: TextContent, Width: f32) -> Vec2 {
 	width: f32
-	for line in WrapText(Content.text, Content.font, Content.config.Size, Width) {
+	for line in WrapText(Content.text, Content.font, Content.config.Size, Content.config.Wrap, Width) {
 		width = max(width, line.Width)
 	}
 	height := MeasureText("", Content.font, Content.config.Size).y * f32(len(lines))

@@ -96,8 +96,9 @@ LayoutConfig :: struct {
 	Hit:     bool,
 }
 
-// WrapMode is how a label breaks its text. None keeps it on one line and lets it
-// overflow, Word breaks between words, which is what the web does by default.
+// WrapMode is how a label breaks its text. Both modes break at the newlines the text
+// has. None never breaks by width, so the label is as wide as its longest line. Word
+// also breaks between words when a line does not fit the width it was given.
 WrapMode :: enum u8 { None, Word }
 
 // TextConfig is how a text leaf paints.
