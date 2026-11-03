@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.0] - 2026-11-03
+
+### Added
+
+- `Wrap` on `Label`, with `None` and `Word`: `Word` breaks a line between words when it does not fit the width
+- `Align` on `Label`, with `Left`, `Center` and `Right`, placing each line inside the width the label got
+- `ScrollMode` for each axis, with `Disabled`, `Auto`, `Always`, `Never` and `Reserve`
+
+### Changed
+
+- layout runs in three passes, so text wraps against the width it ends up with and its height follows the lines
+- `Scroll` is a mode per axis instead of a set of axes, and `Style.ScrollBar` is gone
+- `Paint` takes a width and a height, and its callback receives the element id instead of a user pointer
+- `Grow` and `Fill` shrink by default, so siblings give up space before they overflow
+- the wrapped lines of a text are cached, keyed by the text, font, size, mode and width
+
+### Fixed
+
+- `Storage` keys on the id and the type, so one element can hold a value of each type
+- a label draws inside its padding and border instead of over them
+
 ## [0.4.1] - 2026-11-01
 
 ### Added
