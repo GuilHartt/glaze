@@ -160,10 +160,13 @@ Label :: proc(
 	Size:  f32 = 16,
 	Font:  Font = 0,
 	Wrap:  WrapMode = .None,
+	Align: TextAlign = .Left,
 ) -> Id #no_bounds_check {
 	node_id := Open()
 	state.nodes[len(state.nodes)-1].content = TextContent{
-		text = Text, font = Font, config = TextConfig{Color = Color, Size = Size, Wrap = Wrap},
+		text = Text,
+		font = Font,
+		config = TextConfig{Color = Color, Size = Size, Wrap = Wrap, Align = Align},
 	}
 	Close()
 	return node_id

@@ -502,10 +502,16 @@ draw_node :: proc(i: u32) #no_bounds_check {
 		if len(text_lines) == 0 do break
 
 		line_height := n.content_size.y / f32(len(text_lines))
+		inner := inner_rect(i, n.rect)
 		for line, index in text_lines {
+			x := inner.x
+			#partial switch content.config.Align {
+			case .Center: x += max((inner.w - line.Width) / 2, 0)
+			case .Right:  x += max(inner.w - line.Width, 0)
+			}
 			add_text_run(
 				&list,
-				{n.rect.x, n.rect.y + line_height * f32(index)},
+				{x, inner.y + line_height * f32(index)},
 				string(content.text)[line.Start:line.End],
 				content.config.Color,
 				content.font,

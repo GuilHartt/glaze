@@ -101,11 +101,17 @@ LayoutConfig :: struct {
 // also breaks between words when a line does not fit the width it was given.
 WrapMode :: enum u8 { None, Word }
 
+// TextAlign places each line inside the width the label ended up with. It moves the
+// lines that are shorter than that width, which a wrapped label has when its box is
+// wider than its text.
+TextAlign :: enum u8 { Left, Center, Right }
+
 // TextConfig is how a text leaf paints.
 TextConfig :: struct {
 	Color: Color,
 	Size:  f32,
 	Wrap:  WrapMode,
+	Align: TextAlign,
 }
 
 // ImageConfig is how an image leaf paints.
