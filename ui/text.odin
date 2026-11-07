@@ -1,6 +1,7 @@
 #+feature global-context
 package ui
 
+import "core:strings"
 import "vendor:fontstash"
 
 // Line is one wrapped line: the byte range it covers in the source, and the width
@@ -19,7 +20,8 @@ Line :: struct {
 @(private="file") stale: [dynamic]LabelKey
 
 // LabelKey is what a wrapped result depends on: the words themselves, and the font,
-// size, mode and width they were broken for. Text that matches shares one entry.
+// size, mode and width they were broken for. Text that matches shares one entry, and
+// the cache owns a copy of `text`, so a key outlives the caller's buffer.
 LabelKey :: struct {
 	text:  string,
 	font:  Font,
@@ -88,6 +90,7 @@ cached_label :: proc(Content: TextContent, Width: f32) -> ^LabelCache {
 		return cached
 	}
 
+	key.text = strings.clone(key.text)
 	block := wrap_block(Content, Width)
 
 	label_cache[key] = LabelCache{frame = state.frame, block = block}
@@ -109,6 +112,7 @@ label_purge :: proc() {
 	for key in stale {
 		if cached, ok := label_cache[key]; ok do delete(cached.lines)
 		delete_key(&label_cache, key)
+		delete(key.text)
 	}
 }
 
