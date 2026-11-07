@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.1] - 2026-11-07
+
+### Fixed
+
+- the text cache owns the text it keys on, so text built in a temporary buffer no longer leaves a key pointing at freed memory
+- the vertex and index buffers grow geometrically, so a large mesh no longer copies the whole buffer for every primitive
+- the raylib backend binds the texture after it opens the primitive, so raylib 5.5 paints glyphs instead of solid quads
+- the raylib backend uploads the atlas in `Setup`, so the first frame samples text instead of the default white texture
+- `odin check -vet` passes with `glaze_errors_assert` on and off
+
+### Removed
+
+- `glaze_text_cache`, since the cache is also what owns the wrapped lines
+
 ## [0.5.0] - 2026-11-03
 
 ### Added
