@@ -44,8 +44,10 @@ TextContent :: struct {
 	lines:  []Line,
 }
 
+// ImageContent is a leaf that paints `handle` over its rect, tinted by `config`. The
+// host owns the texture and keeps it alive while the handle is in use.
 ImageContent :: struct {
-	handle: rawptr,
+	handle: Texture,
 	config: ImageConfig
 }
 
@@ -172,10 +174,9 @@ Label :: proc(
 	return node_id
 }
 
-
-// Image adds an image leaf to the currently open node and returns its id, so it
-// can be the target of Hovered/Clicked.
-Image :: proc(Handle: rawptr, Size: Vec2, Tint: Color = {255, 255, 255, 255}) -> Id #no_bounds_check {
+// Image adds an image leaf and returns its id. `Size` is the intrinsic size in layout
+// units; the image is stretched to the rect it gets, and the host owns the texture.
+Image :: proc(Handle: Texture, Size: Vec2, Tint: Color = {255, 255, 255, 255}) -> Id #no_bounds_check {
 	node_id := Open()
 	state.nodes[len(state.nodes)-1].content = ImageContent{
 		handle = Handle,

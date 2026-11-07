@@ -175,6 +175,15 @@ AddRegularPolygonStroke :: proc(
 	AddPolygonStroke(List, p, Tint, Thickness)
 }
 
+// AddImage appends a quad that samples `Handle` over `Rect`, tinted by `Tint`. The
+// host owns the texture; the list only records the handle.
+AddImage :: proc(List: ^DrawList, Rect: Rect, Handle: Texture, Tint: Color) {
+	previous := List.texture
+	List.texture = Handle
+	append_quad(List, Rect.x, Rect.y, Rect.x + Rect.w, Rect.y + Rect.h, {0, 0}, {1, 1}, Tint)
+	List.texture = previous
+}
+
 // AddText appends `Text` with its top left corner at `Pos`.
 AddText :: proc(List: ^DrawList, Pos: Vec2, Text: cstring, Tint: Color, Font: Font = 0, Size: f32 = 16) {
 	if Text == nil do return
@@ -498,6 +507,8 @@ draw_node :: proc(i: u32) #no_bounds_check {
 				content.config.Size,
 			)
 		}
+	case ImageContent:
+		AddImage(&list, inner_rect(i, n.rect), content.handle, content.config.Tint)
 	}
 
 	if n.draw != nil do n.draw(n.rect, &list, n.id)
