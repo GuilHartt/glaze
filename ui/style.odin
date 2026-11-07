@@ -114,9 +114,18 @@ TextConfig :: struct {
 	Align: TextAlign,
 }
 
-// ImageConfig is how an image leaf paints. `Tint` multiplies the texture.
+// ImageFit is how an image fills the rect it was given.
+ImageFit :: enum u8 {
+	Stretch,
+	Contain,
+	Cover,
+}
+
+// ImageConfig is how an image leaf paints. `Tint` multiplies the texture and `Fit` is
+// how it fills the rect.
 ImageConfig :: struct {
 	Tint: Color,
+	Fit:  ImageFit,
 }
 
 // Corners returns a corner radius with `All` on every corner.

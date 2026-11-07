@@ -179,12 +179,19 @@ AddRegularPolygonStroke :: proc(
 	AddPolygonStroke(List, p, Tint, Thickness)
 }
 
-// AddImage appends a quad that samples `Handle` over `Rect`, tinted by `Tint`. The
-// host owns the texture; the list only records the handle.
-AddImage :: proc(List: ^DrawList, Rect: Rect, Handle: Texture, Tint: Color) {
+// AddImage appends a quad that samples the `UV0`..`UV1` region of `Handle` over `Rect`,
+// tinted by `Tint`. The list only records the handle.
+AddImage :: proc(
+	List:   ^DrawList,
+	Rect:   Rect,
+	Handle: Texture,
+	Tint:   Color,
+	UV0:    Vec2 = {0, 0},
+	UV1:    Vec2 = {1, 1},
+) {
 	previous := List.texture
 	List.texture = Handle
-	append_quad(List, Rect.x, Rect.y, Rect.x + Rect.w, Rect.y + Rect.h, {0, 0}, {1, 1}, Tint)
+	append_quad(List, Rect.x, Rect.y, Rect.x + Rect.w, Rect.y + Rect.h, UV0, UV1, Tint)
 	List.texture = previous
 }
 
@@ -469,6 +476,32 @@ draw_build :: proc() {
 	draw_node(0)
 }
 
+// fit_image returns the rect and the UV range an image draws with inside `Target`.
+// Stretch uses the whole target, Contain centers the source inside it, and Cover
+// crops the source to the target's aspect ratio.
+@(private="file")
+fit_image :: proc(Target: Rect, Source: Vec2, Fit: ImageFit) -> (rect: Rect, uv0, uv1: Vec2) {
+	size := Vec2{Target.w, Target.h}
+	drawn := size
+	uv1 = {1, 1}
+
+	if Source.x > 0 && Source.y > 0 {
+		#partial switch Fit {
+		case .Contain:
+			scales := size / Source
+			drawn = Source * min(scales.x, scales.y)
+		case .Cover:
+			scales := size / Source
+			visible := size / max(scales.x, scales.y)
+			uv0 = (Source - visible) / 2 / Source
+			uv1 = uv0 + visible / Source
+		}
+	}
+
+	at := Vec2{Target.x, Target.y} + (size - drawn) / 2
+	return {at.x, at.y, drawn.x, drawn.y}, uv0, uv1
+}
+
 // draw_node emits node i and then its subtree. A node that clips pushes its inner
 // rect before its content and children, so everything inside is cut to it, nesting
 // as deep as the tree asks.
@@ -512,7 +545,12 @@ draw_node :: proc(i: u32) #no_bounds_check {
 			)
 		}
 	case ImageContent:
-		AddImage(&list, inner_rect(i, n.rect), content.handle, content.config.Tint)
+		rect, uv0, uv1 := fit_image(
+			inner_rect(i, n.rect),
+			{content.handle.Width, content.handle.Height},
+			content.config.Fit,
+		)
+		AddImage(&list, rect, content.handle, content.config.Tint, uv0, uv1)
 	}
 
 	if n.draw != nil do n.draw(n.rect, &list, n.id)

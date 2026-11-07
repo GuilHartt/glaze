@@ -174,18 +174,19 @@ Label :: proc(
 	return node_id
 }
 
-// Image adds an image leaf and returns its id. `Width` and `Height` size the leaf and
-// default to the texture size.
+// Image adds an image leaf and returns its id. `Width` and `Height` size the leaf,
+// defaulting to the texture size, and `Fit` is how the texture fills the rect.
 Image :: proc(
 	Handle: Texture,
 	Width:  Sizing = {},
 	Height: Sizing = {},
 	Tint:   Color = {255, 255, 255, 255},
+	Fit:    ImageFit = .Stretch,
 ) -> Id #no_bounds_check {
 	node_id := Open({Width = Width, Height = Height})
 	state.nodes[len(state.nodes)-1].content = ImageContent{
 		handle = Handle,
-		config = ImageConfig{Tint = Tint},
+		config = ImageConfig{Tint = Tint, Fit = Fit},
 	}
 	Close()
 	return node_id
