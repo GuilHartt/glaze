@@ -11,9 +11,13 @@ Vertex :: struct #packed {
 	Color: Color,
 }
 
-// Texture is an opaque handle owned by the backend. The zero value means no
-// texture, which is what the list starts a frame with.
-Texture :: distinct rawptr
+// Texture is a backend texture and its pixel size. The backend owns the texture; the
+// engine only copies the value, and the zero value means no texture.
+Texture :: struct {
+	Handle: rawptr,
+	Width:  f32,
+	Height: f32,
+}
 
 // DrawCommand is one draw call: a slice of the index buffer, drawn with one
 // texture, clipped to one rect.
@@ -456,7 +460,7 @@ draw_begin_frame :: proc() {
 	clear(&list.path)
 	clear(&list.clip_stack)
 	list.clip = {0, 0, state.root_size.x, state.root_size.y}
-	list.texture = nil
+	list.texture = {}
 }
 
 // draw_build walks the tree in paint order, starting from the implicit root.

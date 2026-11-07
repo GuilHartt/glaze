@@ -114,10 +114,8 @@ TextConfig :: struct {
 	Align: TextAlign,
 }
 
-// ImageConfig is how an image leaf paints. `Size` is the intrinsic size in layout
-// units and `Tint` multiplies the texture.
+// ImageConfig is how an image leaf paints. `Tint` multiplies the texture.
 ImageConfig :: struct {
-	Size: Vec2,
 	Tint: Color,
 }
 

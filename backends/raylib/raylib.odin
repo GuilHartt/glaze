@@ -73,7 +73,11 @@ sync_atlas :: proc() {
 	if resized {
 		if atlas.id != 0 do rl.UnloadTexture(atlas)
 		atlas = rl.LoadTextureFromImage(image)
-		ui.SetAtlasTexture(ui.Texture(&atlas))
+		ui.SetAtlasTexture(ui.Texture{
+			Handle = &atlas,
+			Width  = f32(atlas.width),
+			Height = f32(atlas.height),
+		})
 	} else {
 		rl.UpdateTexture(atlas, raw_data(rgba))
 	}
@@ -122,13 +126,32 @@ Render :: proc() {
 	rlgl.EnableBackfaceCulling()
 }
 
+// AddTextureFile loads a texture from a file and gives it to the engine. The backend
+// owns the texture; call RemoveTexture when the handle is no longer used.
+AddTextureFile :: proc(Path: cstring) -> (T: ui.Texture, ok: bool) {
+	tex := rl.LoadTexture(Path)
+	if tex.id == 0 do return {}, false
+
+	owned := new(rl.Texture2D)
+	owned^ = tex
+	return {Handle = owned, Width = f32(tex.width), Height = f32(tex.height)}, true
+}
+
+// RemoveTexture frees a texture loaded by AddTextureFile.
+RemoveTexture :: proc(T: ui.Texture) {
+	if T.Handle == nil do return
+	owned := (^rl.Texture2D)(T.Handle)
+	rl.UnloadTexture(owned^)
+	free(owned)
+}
+
 // texture_id turns an engine texture handle into the GL id rlgl expects. A zero
 // handle gets raylib's 1x1 white texture, because texture 0 samples nothing and
 // comes back black.
 @(private="file")
 texture_id :: #force_inline proc "contextless" (T: ui.Texture) -> u32 {
-	if T == nil do return u32(rlgl.GetTextureIdDefault())
-	return (^rl.Texture2D)(rawptr(T)).id
+	if T.Handle == nil do return u32(rlgl.GetTextureIdDefault())
+	return (^rl.Texture2D)(T.Handle).id
 }
 
 @(private="file")

@@ -174,13 +174,18 @@ Label :: proc(
 	return node_id
 }
 
-// Image adds an image leaf and returns its id. `Size` is the intrinsic size in layout
-// units; the image is stretched to the rect it gets, and the host owns the texture.
-Image :: proc(Handle: Texture, Size: Vec2, Tint: Color = {255, 255, 255, 255}) -> Id #no_bounds_check {
-	node_id := Open()
+// Image adds an image leaf and returns its id. `Width` and `Height` size the leaf and
+// default to the texture size.
+Image :: proc(
+	Handle: Texture,
+	Width:  Sizing = {},
+	Height: Sizing = {},
+	Tint:   Color = {255, 255, 255, 255},
+) -> Id #no_bounds_check {
+	node_id := Open({Width = Width, Height = Height})
 	state.nodes[len(state.nodes)-1].content = ImageContent{
 		handle = Handle,
-		config = ImageConfig{Size = Size, Tint = Tint},
+		config = ImageConfig{Tint = Tint},
 	}
 	Close()
 	return node_id
@@ -485,7 +490,7 @@ measure_width :: proc(i: u32) #no_bounds_check {
 	case TextContent:
 		n.content_size, content.lines = label_measure(content, 0)
 	case ImageContent:
-		n.content_size = content.config.Size
+		n.content_size = {content.handle.Width, content.handle.Height}
 	case:
 		sum, widest: f32
 		count := 0
