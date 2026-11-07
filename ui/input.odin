@@ -166,7 +166,7 @@ AddKey :: proc(Key: Key, Down: bool) {
 AddTypedText :: proc(Text: cstring) {
 	if Text == nil do return
 	drop_terminator()
-	append(&input.Text, ..(transmute([^]u8)Text)[0:len(Text)])
+	append(&input.Text, ..(cast([^]u8)Text)[0:len(Text)])
 	append(&input.Text, 0)
 }
 

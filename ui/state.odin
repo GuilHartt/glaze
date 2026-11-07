@@ -67,8 +67,14 @@ report :: proc(Message: cstring) {
 	when ERRORS_ASSERT {
 		assert(false, string(Message))
 	} else {
-		if error_proc == nil do fmt.eprintln("ui:", Message)
+		if error_proc == nil do report_stderr(Message)
 	}
+}
+
+// report_stderr writes a misuse message to stderr when no callback is bound.
+@(private="file")
+report_stderr :: proc(Message: cstring) {
+	fmt.eprintln("ui:", Message)
 }
 
 // ScrollDrag remembers a thumb held by the pointer, so the drag survives the pointer
