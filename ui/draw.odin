@@ -218,29 +218,6 @@ PopClipRect :: proc(List: ^DrawList) {
 	List.clip = pop(&List.clip_stack)
 }
 
-// mesh_reserve makes room for `Vtx` vertices and `Idx` indices and returns where
-// each block starts.
-@(private="file")
-mesh_reserve :: proc(List: ^DrawList, Vtx, Idx: int) -> (vtx, idx: u32) {
-	vtx = u32(len(List.vertices))
-	idx = u32(len(List.indices))
-	if Vtx > 0 do resize(&List.vertices, len(List.vertices) + Vtx)
-	if Idx > 0 do resize(&List.indices, len(List.indices) + Idx)
-	return
-}
-
-// mesh_vertex writes one vertex at the absolute position `I`.
-@(private="file")
-mesh_vertex :: #force_inline proc(List: ^DrawList, I: u32, Pos, UV: Vec2, Tint: Color) {
-	List.vertices[I] = {Pos = Pos, UV = UV, Color = Tint}
-}
-
-// mesh_index writes one index at the absolute position `I`.
-@(private="file")
-mesh_index :: #force_inline proc(List: ^DrawList, I, V: u32) {
-	List.indices[I] = V
-}
-
 // mesh_command grows the last draw command when it still matches, or opens a new
 // one covering the indices just written.
 @(private="file")
@@ -274,32 +251,35 @@ use_atlas :: #force_inline proc(List: ^DrawList) -> Vec2 {
 // shares the batch with everything else.
 @(private="file")
 append_triangle :: proc(List: ^DrawList, A, B, C: PathPoint, UV: Vec2) {
-	vtx, idx := mesh_reserve(List, 3, 3)
-	mesh_vertex(List, vtx + 0, A.pos, UV, A.col)
-	mesh_vertex(List, vtx + 1, B.pos, UV, B.col)
-	mesh_vertex(List, vtx + 2, C.pos, UV, C.col)
-	mesh_index(List, idx + 0, vtx + 0)
-	mesh_index(List, idx + 1, vtx + 1)
-	mesh_index(List, idx + 2, vtx + 2)
+	vtx := u32(len(List.vertices))
+
+	append(&List.vertices, Vertex{Pos = A.pos, UV = UV, Color = A.col})
+	append(&List.vertices, Vertex{Pos = B.pos, UV = UV, Color = B.col})
+	append(&List.vertices, Vertex{Pos = C.pos, UV = UV, Color = C.col})
+
+	append(&List.indices, vtx + 0)
+	append(&List.indices, vtx + 1)
+	append(&List.indices, vtx + 2)
+
 	mesh_command(List, 3)
 }
 
 // append_quad writes four vertices and six indices for a textured quad.
 @(private="file")
 append_quad :: proc(List: ^DrawList, X0, Y0, X1, Y1: f32, UV0, UV1: Vec2, Tint: Color) {
-	vtx, idx := mesh_reserve(List, 4, 6)
+	vtx := u32(len(List.vertices))
 
-	mesh_vertex(List, vtx + 0, {X0, Y0}, {UV0.x, UV0.y}, Tint)
-	mesh_vertex(List, vtx + 1, {X1, Y0}, {UV1.x, UV0.y}, Tint)
-	mesh_vertex(List, vtx + 2, {X1, Y1}, {UV1.x, UV1.y}, Tint)
-	mesh_vertex(List, vtx + 3, {X0, Y1}, {UV0.x, UV1.y}, Tint)
+	append(&List.vertices, Vertex{Pos = {X0, Y0}, UV = {UV0.x, UV0.y}, Color = Tint})
+	append(&List.vertices, Vertex{Pos = {X1, Y0}, UV = {UV1.x, UV0.y}, Color = Tint})
+	append(&List.vertices, Vertex{Pos = {X1, Y1}, UV = {UV1.x, UV1.y}, Color = Tint})
+	append(&List.vertices, Vertex{Pos = {X0, Y1}, UV = {UV0.x, UV1.y}, Color = Tint})
 
-	mesh_index(List, idx + 0, vtx + 0)
-	mesh_index(List, idx + 1, vtx + 1)
-	mesh_index(List, idx + 2, vtx + 2)
-	mesh_index(List, idx + 3, vtx + 0)
-	mesh_index(List, idx + 4, vtx + 2)
-	mesh_index(List, idx + 5, vtx + 3)
+	append(&List.indices, vtx + 0)
+	append(&List.indices, vtx + 1)
+	append(&List.indices, vtx + 2)
+	append(&List.indices, vtx + 0)
+	append(&List.indices, vtx + 2)
+	append(&List.indices, vtx + 3)
 
 	mesh_command(List, 6)
 }
