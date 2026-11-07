@@ -7,8 +7,9 @@ import rl "vendor:raylib"
 import rlgl "vendor:raylib/rlgl"
 import ui "../../ui"
 
-// Setup binds raylib's default font and clipboard to the engine. Call it once,
-// after the window exists and before the first frame.
+// Setup binds raylib's clipboard to the engine and uploads the initial atlas, so the
+// first frame already records a texture. Call it once, after the window exists and
+// before the first frame.
 Setup :: proc() {
 	when ODIN_DEBUG {
 		for key in ui.Key {
@@ -16,6 +17,7 @@ Setup :: proc() {
 		}
 	}
 	ui.BindClipboard(clipboard_get, clipboard_set)
+	sync_atlas()
 }
 
 // Update feeds the current raylib state into the engine. Call it once per frame,
@@ -96,8 +98,10 @@ Render :: proc() {
 			rl.BeginScissorMode(i32(cmd.Clip.x), i32(cmd.Clip.y), max(0, i32(cmd.Clip.w)), max(0, i32(cmd.Clip.h)))
 		}
 
-		rlgl.SetTexture(texture_id(cmd.Texture))
+		// raylib 5.5 resets the batch texture when Begin changes the primitive mode,
+		// so the texture has to be bound after it opens.
 		rlgl.Begin(rlgl.TRIANGLES)
+		rlgl.SetTexture(texture_id(cmd.Texture))
 
 		for i in cmd.Offset ..< cmd.Offset + cmd.Count {
 			v := frame.Vertices[frame.Indices[i]]
