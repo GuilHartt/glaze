@@ -18,11 +18,6 @@ Line :: struct {
 // does not allocate to walk the cache.
 @(private="file") stale: [dynamic]LabelKey
 
-// TEXT_CACHE keeps the wrapped result of a text until something it depends on
-// changes. Turn it off with -define:glaze_text_cache=false to measure without it.
-@(private="file")
-TEXT_CACHE :: #config(glaze_text_cache, true)
-
 // LabelKey is what a wrapped result depends on: the words themselves, and the font,
 // size, mode and width they were broken for. Text that matches shares one entry.
 LabelKey :: struct {
@@ -72,13 +67,8 @@ WrapText :: proc(Text: cstring, Font: Font, Size: f32, Mode: WrapMode, MaxWidth:
 // pass keeps both on the node, so the draw never asks twice.
 @(private)
 label_measure :: proc(Content: TextContent, Width: f32) -> (block: Vec2, broken: []Line) {
-	when TEXT_CACHE {
-		cached := cached_label(Content, Width)
-		return cached.block, cached.lines[:]
-	}
-
-	block = wrap_block(Content, Width)
-	return block, lines[:]
+	cached := cached_label(Content, Width)
+	return cached.block, cached.lines[:]
 }
 
 // cached_label returns the entry for this text, wrapping again when the key changed,
@@ -112,8 +102,6 @@ cached_label :: proc(Content: TextContent, Width: f32) -> ^LabelCache {
 // text that disappears does not keep its lines forever.
 @(private)
 label_purge :: proc() {
-	when !TEXT_CACHE do return
-
 	clear(&stale)
 	for key, cached in label_cache {
 		if cached.frame != state.frame do append(&stale, key)
