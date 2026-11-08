@@ -535,8 +535,10 @@ draw_node :: proc(i: u32) #no_bounds_check {
 		text_lines := content.lines
 		if len(text_lines) == 0 do break
 
-		line_height := n.content_size.y / f32(len(text_lines))
 		inner := inner_rect(i, n.rect)
+		if !RectOverlaps(inner, list.clip) do break
+
+		line_height := n.content_size.y / f32(len(text_lines))
 		for line, index in text_lines {
 			x := inner.x
 			#partial switch content.config.Align {
@@ -553,15 +555,18 @@ draw_node :: proc(i: u32) #no_bounds_check {
 			)
 		}
 	case ImageContent:
+		inner := inner_rect(i, n.rect)
+		if !RectOverlaps(inner, list.clip) do break
+
 		rect, uv0, uv1 := fit_image(
-			inner_rect(i, n.rect),
+			inner,
 			{content.handle.Width, content.handle.Height},
 			content.config.Fit,
 		)
 		AddImage(&list, rect, content.handle, content.config.Tint, uv0, uv1)
 	}
 
-	if n.draw != nil do n.draw(n.rect, &list, n.id)
+	if n.draw != nil && RectOverlaps(n.rect, list.clip) do n.draw(n.rect, &list, n.id)
 
 	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
 		draw_node(c)

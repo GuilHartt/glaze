@@ -22,6 +22,13 @@ RectIntersect :: #force_inline proc "contextless" (A, B: Rect) -> Rect {
 	return {x, y, max(0, min(A.x + A.w, B.x + B.w) - x), max(0, min(A.y + A.h, B.y + B.h) - y)}
 }
 
+// RectOverlaps reports whether the two rects share any area. Touching edges do not
+// count, since nothing is painted there.
+RectOverlaps :: #force_inline proc "contextless" (A, B: Rect) -> bool {
+	return A.x < B.x + B.w && B.x < A.x + A.w &&
+	       A.y < B.y + B.h && B.y < A.y + A.h
+}
+
 Node :: struct {
 	config:       LayoutConfig,
 	style:        Style,
@@ -193,9 +200,8 @@ Image :: proc(
 	return node_id
 }
 
-// Paint adds a leaf whose drawing is `Draw` and returns its id. It is sized like any
-// other element, so it needs no Row or Column around it. The callback must only emit
-// shapes, never declare elements.
+// Paint adds a sized leaf whose drawing is `Draw` and returns its id, so it needs no
+// Row or Column around it. The callback draws inside the rect and emits only shapes.
 Paint :: proc(
 	Draw:   DrawProc,
 	Width:  Sizing = {Kind = .Fixed, Grow = 1},
