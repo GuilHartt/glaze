@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.6.0] - 2026-11-08
+
+### Added
+
+* `ImageFit` with `Stretch`, `Contain` and `Cover`, setting how a texture fills the image rect
+* `AddImage` on the draw list, with an optional UV range for a cropped quad
+* `AddTextureFile` and `RemoveTexture` on the raylib backend, which owns the texture lifetime
+* `AddFramebufferSize`, `AddDpiScale` and `SetUiScale`, so the host reports the framebuffer and the zoom
+* `Frame.Scale`, the framebuffer pixels per layout unit
+
+### Changed
+
+* `Texture` is a value with the backend handle and the pixel size, and an image takes its intrinsic size from it divided by the DPI
+* `Image` takes a `Texture` and `Width` and `Height` sizing instead of a raw handle and a `Size`, and takes a `Fit`
+* `ImageConfig` loses `Size` and gains `Fit`
+* text measures and rasterizes at the effective scale and stays logical in the layout
+* the pointer arrives in screen units, and `AddMousePos` divides it by the UI zoom
+* `ViewportSize` returns layout units instead of the surface pixels
+* the raylib backend divides the DPI out of `Frame.Scale`, since raylib already applies it
+* the atlas uses bilinear filtering when it is recreated
+
+### Removed
+
+* `AddViewportSize`, replaced by `AddFramebufferSize` and `AddDpiScale`
+* `ImageConfig.Size`, since the texture carries the pixel size
+
+### Fixed
+
+* the image leaf draws its texture through the list, so an image inside a clip or a scroll paints instead of only measuring
+* the draw and the pointer share the framebuffer scale, so a click lands on the element it paints at 125%
+
 ## [0.5.1] - 2026-11-07
 
 ### Fixed
