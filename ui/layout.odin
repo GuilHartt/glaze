@@ -71,7 +71,8 @@ Begin :: proc() {
 		clear(&seen_ids)
 	}
 	append(&state.scopes, Scope{id = ROOT_SEED, node = NO_NODE})
-	Open({Width = Fixed(state.root_size.x), Height = Fixed(state.root_size.y)}, {}, .Column)
+	size := viewport_size()
+	Open({Width = Fixed(size.x), Height = Fixed(size.y)}, {}, .Column)
 }
 
 // End finishes the frame: closes the implicit root, computes layout and
@@ -491,7 +492,10 @@ measure_width :: proc(i: u32) #no_bounds_check {
 	case TextContent:
 		n.content_size, content.lines = label_measure(content, 0)
 	case ImageContent:
-		n.content_size = {content.handle.Width, content.handle.Height}
+		n.content_size = {
+			content.handle.Width  / state.screen.dpi,
+			content.handle.Height / state.screen.dpi,
+		}
 	case:
 		sum, widest: f32
 		count := 0
@@ -652,9 +656,10 @@ arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 // once the widths are known, and finally positions from the outside in.
 @(private="file")
 layout :: proc() {
+	size := viewport_size()
 	measure_width(0)
-	layout_width(0, state.root_size.x)
+	layout_width(0, size.x)
 	measure_height(0)
-	state.nodes[0].rect = Rect{0, 0, state.root_size.x, state.root_size.y}
+	state.nodes[0].rect = Rect{0, 0, size.x, size.y}
 	arrange(0)
 }

@@ -106,7 +106,7 @@ WrapMode :: enum u8 { None, Word }
 // wider than its text.
 TextAlign :: enum u8 { Left, Center, Right }
 
-// TextConfig is how a text leaf paints.
+// TextConfig is how a text leaf paints. `Size` is in layout units.
 TextConfig :: struct {
 	Color: Color,
 	Size:  f32,

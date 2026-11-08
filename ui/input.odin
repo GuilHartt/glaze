@@ -63,7 +63,7 @@ input_end_frame :: proc() {
 	append(&input.Text, 0)
 }
 
-// MousePos returns the pointer position for the current frame.
+// MousePos returns the pointer position for the current frame, in layout units.
 MousePos :: proc() -> Vec2 {
 	return input.Pos
 }
@@ -140,9 +140,9 @@ SetClipboard :: proc(Text: cstring) {
 	}
 }
 
-// AddMousePos feeds the current pointer position. Call it once per frame, or
-// once per pointer-move event.
-AddMousePos :: proc(Pos: Vec2) { input.Pos = Pos }
+// AddMousePos feeds the pointer position, in framebuffer pixels. Call it once per
+// frame, or once per pointer-move event.
+AddMousePos :: proc(Pos: Vec2) { input.Pos = Pos / effective_scale() }
 
 // AddMouseButton feeds a mouse button transition. `Down` is the new held state.
 // Call it on every press and release.

@@ -50,17 +50,19 @@ MergeFont :: proc(Base, Fallback: Font) -> bool {
 	return fontstash.AddFallbackFont(&font_ctx, int(Base), int(Fallback))
 }
 
-// MeasureText returns the size `Text` occupies in `Font` at `Size`: the advance
-// width and the line height.
+// MeasureText returns the size `Text` occupies in `Font` at `Size`, in layout units:
+// the advance width and the line height.
 MeasureText :: proc(Text: cstring, Font: Font, Size: f32) -> Vec2 {
 	if len(font_ctx.fonts) == 0 || Size <= 0 do return {}
 
+	scale := effective_scale()
 	fontstash.SetFont(&font_ctx, int(Font))
-	fontstash.SetSize(&font_ctx, Size)
+	fontstash.SetSize(&font_ctx, Size * scale)
 
 	advance := fontstash.TextBounds(&font_ctx, string(Text))
 	_, _, line_height := fontstash.VerticalMetrics(&font_ctx)
-	return {advance, line_height}
+
+	return {advance / scale, line_height / scale}
 }
 
 // FontAtlas returns the atlas pixels and its size, for the backend to upload. The

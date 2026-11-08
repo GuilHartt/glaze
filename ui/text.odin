@@ -1,11 +1,12 @@
 #+feature global-context
 package ui
 
+import "base:sanitizer"
 import "core:strings"
 import "vendor:fontstash"
 
 // Line is one wrapped line: the byte range it covers in the source, and the width
-// it takes on screen.
+// it takes in layout units.
 Line :: struct {
 	Start, End: u32,
 	Width:      f32,
@@ -20,14 +21,15 @@ Line :: struct {
 @(private="file") stale: [dynamic]LabelKey
 
 // LabelKey is what a wrapped result depends on: the words themselves, and the font,
-// size, mode and width they were broken for. Text that matches shares one entry, and
-// the cache owns a copy of `text`, so a key outlives the caller's buffer.
+// size, mode, width and scale they were broken for. Text that matches shares one entry,
+// and the cache owns a copy of `text`, so a key outlives the caller's buffer.
 LabelKey :: struct {
 	text:  string,
 	font:  Font,
 	size:  f32,
 	mode:  WrapMode,
 	width: f32,
+	scale: f32,
 }
 
 // LabelCache is the wrapped layout of one text, keyed by everything that would
@@ -43,22 +45,23 @@ LabelCache :: struct {
 label_cache: map[LabelKey]LabelCache
 
 // WrapText breaks `Text` into lines according to `Mode`, measuring with `Font` at
-// `Size`. A line is a byte range in the source, so no text is copied, and the result
-// is valid until the next call. Every mode breaks at the newlines, and only Word
-// breaks by `MaxWidth` as well.
+// `Size`. The input and the line widths are in layout units. A line is a byte range in
+// the source, so no text is copied, and the result is valid until the next call. Every
+// mode breaks at the newlines, and only Word breaks by `MaxWidth` as well.
 WrapText :: proc(Text: cstring, Font: Font, Size: f32, Mode: WrapMode, MaxWidth: f32) -> []Line {
 	clear(&lines)
 	if Text == nil || Size <= 0 do return lines[:]
 
+	scale := effective_scale()
 	fontstash.SetFont(&font_ctx, int(Font))
-	fontstash.SetSize(&font_ctx, Size)
+	fontstash.SetSize(&font_ctx, Size * scale)
 
 	src, space := string(Text), measure(" ")
-	limit := MaxWidth if Mode == .Word else f32(0)
+	limit := MaxWidth  * scale if Mode == .Word else f32(0)
 	start: int
 	for i in 0 ..= len(src) {
 		if i < len(src) && src[i] != '\n' do continue
-		wrap_paragraph(src[start:i], start, limit, space)
+		wrap_paragraph(src[start:i], start, limit, space, scale)
 		start = i + 1
 	}
 	return lines[:]
@@ -83,6 +86,7 @@ cached_label :: proc(Content: TextContent, Width: f32) -> ^LabelCache {
 		size  = Content.config.Size,
 		mode  = Content.config.Wrap,
 		width = Width,
+		scale = effective_scale(),
 	}
 
 	if cached, ok := &label_cache[key]; ok {
@@ -132,7 +136,7 @@ wrap_block :: proc(Content: TextContent, Width: f32) -> Vec2 {
 // never splits a word: one wider than the line overflows it, which is what the web
 // does by default.
 @(private="file")
-wrap_paragraph :: proc(P: string, Offset: int, MaxWidth, Space: f32) {
+wrap_paragraph :: proc(P: string, Offset: int, MaxWidth, Space: f32, Scale: f32) {
 	if len(P) == 0 {
 		append(&lines, Line{u32(Offset), u32(Offset), 0})
 		return
@@ -141,7 +145,7 @@ wrap_paragraph :: proc(P: string, Offset: int, MaxWidth, Space: f32) {
 	// The whole paragraph fitting is the common case, and it costs one measurement.
 	width := measure(P)
 	if MaxWidth <= 0 || width <= MaxWidth {
-		append(&lines, Line{u32(Offset), u32(Offset + len(P)), width})
+		append(&lines, Line{u32(Offset), u32(Offset + len(P)), width / Scale})
 		return
 	}
 
@@ -162,7 +166,7 @@ wrap_paragraph :: proc(P: string, Offset: int, MaxWidth, Space: f32) {
 			cursor = end + 1
 		}
 
-		append(&lines, Line{u32(Offset + start), u32(Offset + fit), line})
+		append(&lines, Line{u32(Offset + start), u32(Offset + fit), line / Scale})
 		start = fit + 1
 	}
 }

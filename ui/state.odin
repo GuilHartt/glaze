@@ -86,31 +86,71 @@ ScrollDrag :: struct {
 	grab: f32,
 }
 
+// Screen holds the framebuffer and the two scales a frame maps through: `framebuffer`
+// is in physical pixels, `dpi` is the platform scale, and `ui` is the app zoom.
+@(private)
+Screen :: struct {
+	framebuffer: Vec2,
+	dpi:         f32,
+	ui:          f32,
+}
+
 State :: struct {
-	root_size: Vec2,
-	frame:     u32,
-	hover_id:  Id,
-	press_id:  Id,
-	click_id:  Id,
-	drag:      ScrollDrag,
-	storage:   map[StorageKey]rawptr,
-	nodes:     [dynamic]Node,
-	scopes:    [dynamic]Scope,
-	flexes:    [dynamic]Flex,
+	screen:   Screen,
+	frame:    u32,
+	hover_id: Id,
+	press_id: Id,
+	click_id: Id,
+	drag:     ScrollDrag,
+	storage:  map[StorageKey]rawptr,
+	nodes:    [dynamic]Node,
+	scopes:   [dynamic]Scope,
+	flexes:   [dynamic]Flex,
 }
 
 @(private)
-state: State
+state: State = {screen = {dpi = 1, ui = 1}}
 
-// AddViewportSize feeds the size of the surface the UI is laid out into, in
-// pixels. Call it once per frame, before Begin.
-AddViewportSize :: proc(Size: Vec2) {
-	state.root_size = Size
+// effective_scale returns the physical pixels per layout unit.
+@(private)
+effective_scale :: #force_inline proc "contextless" () -> f32 {
+	return state.screen.dpi * state.screen.ui
 }
 
-// ViewportSize returns the size of the surface the UI is laid out into, in pixels.
+// viewport_size returns the surface the UI lays out into, in layout units.
+@(private)
+viewport_size :: #force_inline proc "contextless" () -> Vec2 {
+	return state.screen.framebuffer / effective_scale()
+}
+
+// AddFramebufferSize feeds the size of the framebuffer, in physical pixels. Call it
+// once per frame, before Begin.
+AddFramebufferSize :: proc(Size: Vec2) {
+	state.screen.framebuffer = Size
+}
+
+// AddDpiScale feeds the physical pixels per layout unit of the platform. Call it once
+// per frame, before Begin.
+AddDpiScale :: proc(Scale: f32) {
+	if Scale <= 0 {
+		report("ui: DPI scale must be positive")
+		return
+	}
+	state.screen.dpi = Scale
+}
+
+// SetUiScale sets the zoom of the whole UI, where 1 is the platform size.
+SetUiScale :: proc(Scale: f32) {
+	if Scale <= 0 {
+		report("ui: UI scale must be positive")
+		return
+	}
+	state.screen.ui = Scale
+}
+
+// ViewportSize returns the surface the UI is laid out into, in layout units.
 ViewportSize :: proc() -> Vec2 {
-	return state.root_size
+	return viewport_size()
 }
 
 // Storage returns the `T` stored under `Id`, allocating a zero value the first

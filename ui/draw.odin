@@ -59,6 +59,7 @@ Frame :: struct {
 	Vertices: []Vertex,
 	Indices:  []u32,
 	Commands: []DrawCommand,
+	Scale:    f32,
 }
 
 @(private="file")
@@ -67,7 +68,7 @@ list: DrawList
 // DrawData returns the mesh and draw commands of the last completed frame. The
 // slices are only valid until the next call to Begin.
 DrawData :: proc() -> Frame {
-	return {list.vertices[:], list.indices[:], list.commands[:]}
+	return {list.vertices[:], list.indices[:], list.commands[:], effective_scale()}
 }
 
 // AddRectFilled appends one filled rectangle, rounding each corner by its own
@@ -195,7 +196,8 @@ AddImage :: proc(
 	List.texture = previous
 }
 
-// AddText appends `Text` with its top left corner at `Pos`.
+// AddText appends `Text` with its top left corner at `Pos`. `Pos` and `Size` are in
+// layout units.
 AddText :: proc(List: ^DrawList, Pos: Vec2, Text: cstring, Tint: Color, Font: Font = 0, Size: f32 = 16) {
 	if Text == nil do return
 	add_text_run(List, Pos, string(Text), Tint, Font, Size)
@@ -207,18 +209,23 @@ AddText :: proc(List: ^DrawList, Pos: Vec2, Text: cstring, Tint: Color, Font: Fo
 add_text_run :: proc(List: ^DrawList, Pos: Vec2, Run: string, Tint: Color, Font: Font, Size: f32) {
 	if len(Run) == 0 || len(font_ctx.fonts) == 0 || Size <= 0 do return
 
+	scale := effective_scale()
 	fontstash.SetFont(&font_ctx, int(Font))
-	fontstash.SetSize(&font_ctx, Size)
+	fontstash.SetSize(&font_ctx, Size * scale)
 	fontstash.SetAV(&font_ctx, .TOP)
 	fontstash.SetAH(&font_ctx, .LEFT)
 
 	previous := List.texture
 	List.texture = atlas_texture
 
-	iter := fontstash.TextIterInit(&font_ctx, Pos.x, Pos.y, Run)
+	iter := fontstash.TextIterInit(&font_ctx, Pos.x * scale, Pos.y * scale, Run)
 	quad: fontstash.Quad
 	for fontstash.TextIterNext(&font_ctx, &iter, &quad) {
-		append_quad(List, quad.x0, quad.y0, quad.x1, quad.y1, {quad.s0, quad.t0}, {quad.s1, quad.t1}, Tint)
+		append_quad(
+			List,
+			quad.x0 / scale, quad.y0 / scale, quad.x1 / scale, quad.y1 / scale,
+			{quad.s0, quad.t0}, {quad.s1, quad.t1}, Tint,
+		)
 	}
 
 	List.texture = previous
@@ -466,7 +473,8 @@ draw_begin_frame :: proc() {
 	clear(&list.commands)
 	clear(&list.path)
 	clear(&list.clip_stack)
-	list.clip = {0, 0, state.root_size.x, state.root_size.y}
+	size := viewport_size()
+	list.clip = {0, 0, size.x, size.y}
 	list.texture = {}
 }
 

@@ -24,10 +24,20 @@ Setup :: proc() {
 // before ui.Begin.
 Update :: proc() {
 	ui.AddDeltaTime(rl.GetFrameTime())
-	ui.AddViewportSize({f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())})
+
+	render := ui.Vec2{f32(rl.GetRenderWidth()), f32(rl.GetRenderHeight())}
+	screen := ui.Vec2{f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
+	fb := ui.Vec2{1, 1}
+	dpi := rl.GetWindowScaleDPI().x
+	if screen.x > 0 && screen.y > 0 {
+		fb = render / screen
+		dpi = max(dpi, fb.x)
+	}
+	ui.AddDpiScale(dpi)
+	ui.AddFramebufferSize(render)
 
 	pos := rl.GetMousePosition()
-	ui.AddMousePos({pos.x, pos.y})
+	ui.AddMousePos({pos.x * fb.x, pos.y * fb.y})
 	ui.AddMouseButton(.Left,   rl.IsMouseButtonDown(.LEFT))
 	ui.AddMouseButton(.Right,  rl.IsMouseButtonDown(.RIGHT))
 	ui.AddMouseButton(.Middle, rl.IsMouseButtonDown(.MIDDLE))
@@ -92,14 +102,19 @@ Render :: proc() {
 	rlgl.DisableBackfaceCulling()
 
 	frame := ui.DrawData()
+	scale := frame.Scale
 	for cmd, i in frame.Commands {
 
 		// A scissor change only affects what is flushed after it, so the batch has to
 		// go out first. BeginScissorMode also flips the y axis for us: rlgl's raw
 		// Scissor takes the origin at the bottom left.
 		if i == 0 || cmd.Clip != frame.Commands[i - 1].Clip {
+			clip := cmd.Clip
 			rlgl.DrawRenderBatchActive()
-			rl.BeginScissorMode(i32(cmd.Clip.x), i32(cmd.Clip.y), max(0, i32(cmd.Clip.w)), max(0, i32(cmd.Clip.h)))
+			rl.BeginScissorMode(
+				i32(clip.x * scale), i32(clip.y * scale),
+				max(0, i32(clip.w * scale)), max(0, i32(clip.h * scale)),
+			)
 		}
 
 		// raylib 5.5 resets the batch texture when Begin changes the primitive mode,
@@ -111,7 +126,7 @@ Render :: proc() {
 			v := frame.Vertices[frame.Indices[i]]
 			rlgl.Color4ub(v.Color.r, v.Color.g, v.Color.b, v.Color.a)
 			rlgl.TexCoord2f(v.UV.x, v.UV.y)
-			rlgl.Vertex2f(v.Pos.x, v.Pos.y)
+			rlgl.Vertex2f(v.Pos.x * scale, v.Pos.y * scale)
 		}
 		rlgl.End()
 
