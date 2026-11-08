@@ -20,6 +20,11 @@ Setup :: proc() {
 	sync_atlas()
 }
 
+// dpi is the framebuffer per screen pixel, which is the scale raylib already applies
+// when it draws. Render divides it out so only the UI zoom is applied here.
+@(private="file")
+dpi: f32 = 1
+
 // Update feeds the current raylib state into the engine. Call it once per frame,
 // before ui.Begin.
 Update :: proc() {
@@ -27,17 +32,14 @@ Update :: proc() {
 
 	render := ui.Vec2{f32(rl.GetRenderWidth()), f32(rl.GetRenderHeight())}
 	screen := ui.Vec2{f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
-	fb := ui.Vec2{1, 1}
-	dpi := rl.GetWindowScaleDPI().x
-	if screen.x > 0 && screen.y > 0 {
-		fb = render / screen
-		dpi = max(dpi, fb.x)
+	dpi = 1
+	if render.x > 0 && screen.x > 0 {
+		dpi = render.x / screen.x
 	}
-	ui.AddDpiScale(dpi)
-	ui.AddFramebufferSize(render)
 
-	pos := rl.GetMousePosition()
-	ui.AddMousePos({pos.x * fb.x, pos.y * fb.y})
+	ui.AddFramebufferSize(render)
+	ui.AddDpiScale(dpi)
+	ui.AddMousePos(rl.GetMousePosition())
 	ui.AddMouseButton(.Left,   rl.IsMouseButtonDown(.LEFT))
 	ui.AddMouseButton(.Right,  rl.IsMouseButtonDown(.RIGHT))
 	ui.AddMouseButton(.Middle, rl.IsMouseButtonDown(.MIDDLE))
@@ -83,6 +85,7 @@ sync_atlas :: proc() {
 	if resized {
 		if atlas.id != 0 do rl.UnloadTexture(atlas)
 		atlas = rl.LoadTextureFromImage(image)
+		rl.SetTextureFilter(atlas, .BILINEAR)
 		ui.SetAtlasTexture(ui.Texture{
 			Handle = &atlas,
 			Width  = f32(atlas.width),
@@ -102,7 +105,10 @@ Render :: proc() {
 	rlgl.DisableBackfaceCulling()
 
 	frame := ui.DrawData()
-	scale := frame.Scale
+	// BeginDrawing already applies the window DPI scale to every vertex, and
+	// BeginScissorMode already scales the rect by it, so the only scaling left
+	// here is the UI zoom.
+	scale := frame.Scale / dpi
 	for cmd, i in frame.Commands {
 
 		// A scissor change only affects what is flushed after it, so the batch has to

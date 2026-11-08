@@ -86,7 +86,7 @@ ScrollDrag :: struct {
 	grab: f32,
 }
 
-// Screen holds the framebuffer and the two scales a frame maps through: `framebuffer`
+// Screen holds the framebuffer and the scales a frame maps through: `framebuffer`
 // is in physical pixels, `dpi` is the platform scale, and `ui` is the app zoom.
 @(private)
 Screen :: struct {
@@ -111,7 +111,7 @@ State :: struct {
 @(private)
 state: State = {screen = {dpi = 1, ui = 1}}
 
-// effective_scale returns the physical pixels per layout unit.
+// effective_scale returns the framebuffer pixels per layout unit.
 @(private)
 effective_scale :: #force_inline proc "contextless" () -> f32 {
 	return state.screen.dpi * state.screen.ui
@@ -129,8 +129,8 @@ AddFramebufferSize :: proc(Size: Vec2) {
 	state.screen.framebuffer = Size
 }
 
-// AddDpiScale feeds the physical pixels per layout unit of the platform. Call it once
-// per frame, before Begin.
+// AddDpiScale feeds the platform scale, in physical pixels per screen pixel. Call it
+// once per frame, before Begin.
 AddDpiScale :: proc(Scale: f32) {
 	if Scale <= 0 {
 		report("ui: DPI scale must be positive")

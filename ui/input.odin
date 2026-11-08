@@ -140,9 +140,9 @@ SetClipboard :: proc(Text: cstring) {
 	}
 }
 
-// AddMousePos feeds the pointer position, in framebuffer pixels. Call it once per
-// frame, or once per pointer-move event.
-AddMousePos :: proc(Pos: Vec2) { input.Pos = Pos / effective_scale() }
+// AddMousePos feeds the pointer position, in screen units. Call it once per frame,
+// or once per pointer-move event.
+AddMousePos :: proc(Pos: Vec2) { input.Pos = Pos / state.screen.ui }
 
 // AddMouseButton feeds a mouse button transition. `Down` is the new held state.
 // Call it on every press and release.
