@@ -407,12 +407,44 @@ path_stroke :: proc(List: ^DrawList, Tint: Color, Thickness: f32 = 1, Closed: bo
 		length := math.sqrt(d.x * d.x + d.y * d.y)
 		if length <= 0 do continue
 
+		if Closed || i > 0 {
+			prev := List.path[(i - 1 + n) % n]
+			add_bevel(List, prev, a, b, half, Tint, uv)
+		}
+
 		normal := Vec2{-d.y / length * half, d.x / length * half}
 		append_triangle(List, {a.pos + normal, Tint}, {b.pos + normal, Tint}, {b.pos - normal, Tint}, uv)
 		append_triangle(List, {a.pos + normal, Tint}, {b.pos - normal, Tint}, {a.pos - normal, Tint}, uv)
 	}
 
 	path_clear(List)
+}
+
+// add_bevel fills the outer wedge at `At` between the edges into `At` and out of
+// `At`. It is the cheapest join and leaves a flat corner.
+@(private="file")
+add_bevel :: proc(List: ^DrawList, Prev, At, Next: PathPoint, Half: f32, Tint: Color, UV: Vec2) {
+	din := At.pos - Prev.pos
+	dout := Next.pos - At.pos
+	din_len := math.sqrt(din.x * din.x + din.y * din.y)
+	dout_len := math.sqrt(dout.x * dout.x + dout.y * dout.y)
+	if din_len <= 0 || dout_len <= 0 do return
+
+	cross := din.x * dout.y - din.y * dout.x
+	if cross == 0 do return
+
+	din_n := Vec2{-din.y, din.x} / din_len * Half
+	dout_n := Vec2{-dout.y, dout.x} / dout_len * Half
+	side: f32 = 1
+	if cross > 0 do side = -1
+
+	append_triangle(
+		List,
+		{At.pos + din_n * side, Tint},
+		{At.pos + dout_n * side, Tint},
+		{At.pos, Tint},
+		UV,
+	)
 }
 
 @(private="file")
