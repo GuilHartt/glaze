@@ -559,7 +559,7 @@ draw_node :: proc(i: u32) #no_bounds_check {
 
 	n.clip = list.clip
 
-	clip := n.config.Clip || n.strips != {}
+	clip := n.config.Clip || scrolls(n, .Vertical) || scrolls(n, .Horizontal)
 	if clip do PushClipRect(&list, inner_rect(i, n.rect))
 
 	#partial switch content in n.content {
@@ -568,7 +568,8 @@ draw_node :: proc(i: u32) #no_bounds_check {
 		if len(text_lines) == 0 do break
 
 		inner := inner_rect(i, n.rect)
-		if !RectOverlaps(inner, list.clip) do break
+		painted := Rect{inner.x, inner.y, max(inner.w, n.content_size.x), max(inner.h, n.content_size.y)}
+		if !RectOverlaps(painted, list.clip) do break
 
 		line_height := n.content_size.y / f32(len(text_lines))
 		for line, index in text_lines {
