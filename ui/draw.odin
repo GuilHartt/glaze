@@ -275,7 +275,7 @@ use_atlas :: #force_inline proc(List: ^DrawList) -> Vec2 {
 }
 
 // append_triangle writes one colored triangle sampling the atlas white texel, so it
-// shares the batch with everything else.
+// shares the batch with everything else. The caller closes the command.
 @(private="file")
 append_triangle :: proc(List: ^DrawList, A, B, C: PathPoint, UV: Vec2) {
 	vtx := u32(len(List.vertices))
@@ -287,8 +287,25 @@ append_triangle :: proc(List: ^DrawList, A, B, C: PathPoint, UV: Vec2) {
 	append(&List.indices, vtx + 0)
 	append(&List.indices, vtx + 1)
 	append(&List.indices, vtx + 2)
+}
 
-	mesh_command(List, 3)
+// append_band writes the two triangles of one quad from the four corners in order, so
+// a stroke edge costs four vertices instead of six.
+@(private="file")
+append_band :: proc(List: ^DrawList, A, B, C, D: PathPoint, UV: Vec2) {
+	vtx := u32(len(List.vertices))
+
+	append(&List.vertices, Vertex{Pos = A.pos, UV = UV, Color = A.col})
+	append(&List.vertices, Vertex{Pos = B.pos, UV = UV, Color = B.col})
+	append(&List.vertices, Vertex{Pos = C.pos, UV = UV, Color = C.col})
+	append(&List.vertices, Vertex{Pos = D.pos, UV = UV, Color = D.col})
+
+	append(&List.indices, vtx + 0)
+	append(&List.indices, vtx + 1)
+	append(&List.indices, vtx + 2)
+	append(&List.indices, vtx + 0)
+	append(&List.indices, vtx + 2)
+	append(&List.indices, vtx + 3)
 }
 
 // append_quad writes four vertices and six indices for a textured quad.
@@ -378,10 +395,17 @@ path_fill_convex :: proc(List: ^DrawList) {
 	n := len(List.path)
 	if n >= 3 {
 		uv := use_atlas(List)
-		first := List.path[0]
+		start := len(List.indices)
+		vtx := u32(len(List.vertices))
+
+		for p in List.path do append(&List.vertices, Vertex{Pos = p.pos, UV = uv, Color = p.col})
 		for i in 1 ..< n - 1 {
-			append_triangle(List, first, List.path[i], List.path[i + 1], uv)
+			append(&List.indices, vtx)
+			append(&List.indices, vtx + u32(i))
+			append(&List.indices, vtx + u32(i + 1))
 		}
+
+		mesh_command(List, u32(len(List.indices) - start))
 	}
 	path_clear(List)
 }
@@ -398,6 +422,7 @@ path_stroke :: proc(List: ^DrawList, Tint: Color, Thickness: f32 = 1, Closed: bo
 	uv := use_atlas(List)
 	half := Thickness / 2
 	edges := n if Closed else n - 1
+	start := len(List.indices)
 
 	for i in 0 ..< edges {
 		a := List.path[i]
@@ -413,10 +438,17 @@ path_stroke :: proc(List: ^DrawList, Tint: Color, Thickness: f32 = 1, Closed: bo
 		}
 
 		normal := Vec2{-d.y / length * half, d.x / length * half}
-		append_triangle(List, {a.pos + normal, Tint}, {b.pos + normal, Tint}, {b.pos - normal, Tint}, uv)
-		append_triangle(List, {a.pos + normal, Tint}, {b.pos - normal, Tint}, {a.pos - normal, Tint}, uv)
+		append_band(
+			List,
+			{a.pos + normal, Tint},
+			{b.pos + normal, Tint},
+			{b.pos - normal, Tint},
+			{a.pos - normal, Tint},
+			uv,
+		)
 	}
 
+	if count := len(List.indices) - start; count > 0 do mesh_command(List, u32(count))
 	path_clear(List)
 }
 
