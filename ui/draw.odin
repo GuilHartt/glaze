@@ -549,12 +549,19 @@ fit_image :: proc(Target: Rect, Source: Vec2, Fit: ImageFit) -> (rect: Rect, uv0
 draw_node :: proc(i: u32) #no_bounds_check {
 	n := &state.nodes[i]
 
+	// One test decides whether this element paints at all. The border is centered on
+	// the edge, so half of it sits outside the rect.
+	bw := n.style.Border.Width / 2
+	visible := RectOverlaps({n.rect.x - bw, n.rect.y - bw, n.rect.w + bw * 2, n.rect.h + bw * 2}, list.clip)
 	corners := n.style.CornerRadius
-	if n.style.Background.a != 0 {
-		AddRectFilled(&list, n.rect, n.style.Background, corners)
-	}
-	if n.style.Border.Width > 0 {
-		AddRectStroke(&list, n.rect, n.style.Border.Color, n.style.Border.Width, corners)
+	
+	if visible {
+		if n.style.Background.a != 0 {
+			AddRectFilled(&list, n.rect, n.style.Background, corners)
+		}
+		if n.style.Border.Width > 0 {
+			AddRectStroke(&list, n.rect, n.style.Border.Color, n.style.Border.Width, corners)
+		}
 	}
 
 	n.clip = list.clip
@@ -599,14 +606,14 @@ draw_node :: proc(i: u32) #no_bounds_check {
 		AddImage(&list, rect, content.handle, content.config.Tint, uv0, uv1)
 	}
 
-	if n.draw != nil && RectOverlaps(n.rect, list.clip) do n.draw(n.rect, &list, n.id)
+	if n.draw != nil && visible do n.draw(n.rect, &list, n.id)
 
 	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
 		draw_node(c)
 	}
 
 	if clip do PopClipRect(&list)
-	if n.strips != {} do draw_scrollbar(i)
+	if n.strips != {} && visible do draw_scrollbar(i)
 }
 
 // draw_scrollbar draws the bar of node i on every axis that has one, with the same
