@@ -49,7 +49,7 @@ backend.Setup()   // once, after the window exists
 
 backend.Update()  // per frame: input, timing and viewport
 ui.Begin()
-    if ui.Column({Gap = 10, Pad = ui.Pad(8)}) {
+    if ui.Column({Gap = 10, Pad = ui.Edge(8)}) {
         ui.Label("hello")
         if ui.Clicked() {
             // ...

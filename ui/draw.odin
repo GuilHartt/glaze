@@ -190,6 +190,33 @@ draw_background :: proc(Rect: Rect, Value: Background, CornerRadius: CornerRadiu
 	}
 }
 
+// draw_border outlines `Rect` with `Width` in `Color`, and returns when every side is zero.
+// Equal sides keep the corner radius through one stroke; sides that differ are painted as
+// plain edges, which is what a divider or a single-sided underline needs.
+@(private="file")
+draw_border :: proc(Rect: Rect, Color: Color, Width: Edges, CornerRadius: CornerRadius) {
+	w := Width
+
+	if w.Left == w.Right && w.Top == w.Bottom && w.Left == w.Top {
+		if w.Left > 0 do AddRectStroke(&list, Rect, Color, w.Left, CornerRadius)
+		return
+	}
+
+	// Each side is drawn inward from the edge, so no side reaches past the rect.
+	if w.Top > 0 {
+		AddRectFilled(&list, {Rect.x, Rect.y, Rect.w, w.Top}, Color)
+	}
+	if w.Bottom > 0 {
+		AddRectFilled(&list, {Rect.x, Rect.y + Rect.h - w.Bottom, Rect.w, w.Bottom}, Color)
+	}
+	if w.Left > 0 {
+		AddRectFilled(&list, {Rect.x, Rect.y + w.Top, w.Left, max(Rect.h - w.Top - w.Bottom, 0)}, Color)
+	}
+	if w.Right > 0 {
+		AddRectFilled(&list, {Rect.x + Rect.w - w.Right, Rect.y + w.Top, w.Right, max(Rect.h - w.Top - w.Bottom, 0)}, Color)
+	}
+}
+
 // draw_node emits node i and then its subtree. A node that clips pushes its inner rect
 // before its content and children, so everything inside is cut to it.
 @(private="file")
@@ -197,16 +224,15 @@ draw_node :: proc(i: u32) #no_bounds_check {
 	n := &state.nodes[i]
 
 	// One test decides whether the element paints at all. The border is centered on the
-	// edge, so half of it sits outside the rect.
-	bw := n.style.Border.Width / 2
+	// edge, so half of the widest side sits outside the rect.
+	b := n.style.BorderWidth
+	bw := max(b.Left, b.Right, b.Top, b.Bottom) / 2
 	visible := RectOverlaps({n.rect.x - bw, n.rect.y - bw, n.rect.w + bw * 2, n.rect.h + bw * 2}, list.clip)
 	corners := n.style.CornerRadius
 
 	if visible {
 		draw_background(n.rect, n.style.Background, corners)
-		if n.style.Border.Width > 0 {
-			AddRectStroke(&list, n.rect, n.style.Border.Color, n.style.Border.Width, corners)
-		}
+		draw_border(n.rect, n.style.BorderColor, n.style.BorderWidth, corners)
 	}
 
 	n.clip = list.clip

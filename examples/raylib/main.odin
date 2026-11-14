@@ -16,7 +16,7 @@ main :: proc() {
 		backend.Update()
 
 		ui.Begin()
-			if ui.Column({Gap = 10, Pad = ui.Pad(5)}) {
+			if ui.Column({Gap = 10, Pad = ui.Edge(5)}) {
 				for i in 0..=10 {
 					ui.Label(fmt.ctprintf("hello %i", i), Size = 22)
 					if ui.Clicked() {

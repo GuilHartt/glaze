@@ -16,8 +16,9 @@ Align :: enum u8 {
 	Stretch,
 }
 
-// Padding holds the space inside a box, on each side.
-Padding :: struct {Left, Right, Top, Bottom: f32}
+// Edges is one length per side of a box. It serves as padding and as the thickness of a
+// border, since both measure the four sides the same way.
+Edges :: struct {Left, Right, Top, Bottom: f32}
 
 // SizeKind is how a sizing treats its `Basis`.
 SizeKind :: enum u8 { Fit, Fixed }
@@ -38,12 +39,6 @@ CornerRadius :: struct {
 	TopLeft, TopRight, BottomRight, BottomLeft: f32,
 }
 
-// Border is the outline of a box.
-Border :: struct {
-	Color: Color,
-	Width: f32,
-}
-
 // Gradient holds four corner colors: top left, top right, bottom right, bottom left.
 Gradient :: [4]Color
 
@@ -54,11 +49,13 @@ Background :: union {
 	Gradient,
 }
 
-// Style is how a box paints itself. Any element carries one, leaf or container.
+// Style is how a box paints itself. Any element carries one, leaf or container. Equal border
+// sides keep the corner radius; sides that differ are painted as plain edges.
 Style :: struct {
 	Background:   Background,
 	CornerRadius: CornerRadius,
-	Border:       Border,
+	BorderColor:  Color,
+	BorderWidth:  Edges,
 }
 
 // LayoutConfig is how an element is sized and how it places its children. A container with
@@ -66,7 +63,7 @@ Style :: struct {
 LayoutConfig :: struct {
 	Width:   Sizing,
 	Height:  Sizing,
-	Pad:     Padding,
+	Pad:     Edges,
 	Gap:     f32,
 	Justify: Justify,
 	Align:   Align,
@@ -101,19 +98,19 @@ Corners :: #force_inline proc "contextless" (All: f32) -> CornerRadius {
 	return {TopLeft = All, TopRight = All, BottomRight = All, BottomLeft = All}
 }
 
-// Pad builds a Padding: Pad(All) puts `All` on every side, Pad(X, Y) puts `X` on the left
-// and right and `Y` on the top and bottom.
-Pad :: proc{pad_all, pad_xy}
+// Edge builds an Edges: Edge(All) puts `All` on every side, Edge(X, Y) puts `X` on the left
+// and right and `Y` on the top and bottom. A bare `Edges` literal names the sides.
+Edge :: proc{edge_all, edge_xy}
 
-// pad_all returns the padding with `All` on every side.
+// edge_all returns the edges with `All` on every side.
 @(private="file")
-pad_all :: #force_inline proc(All: f32) -> Padding {
+edge_all :: #force_inline proc(All: f32) -> Edges {
 	return {Left = All, Right = All, Top = All, Bottom = All}
 }
 
-// pad_xy returns the padding with `X` on the left and right and `Y` on the top and bottom.
+// edge_xy returns the edges with `X` on the left and right and `Y` on the top and bottom.
 @(private="file")
-pad_xy :: #force_inline proc(X, Y: f32) -> Padding {
+edge_xy :: #force_inline proc(X, Y: f32) -> Edges {
 	return {Left = X, Right = X, Top = Y, Bottom = Y}
 }
 

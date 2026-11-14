@@ -109,7 +109,7 @@ resolve_axis :: proc(s: Sizing, content: f32) -> f32 {
 // padding returns the node's padding with the strip of a scroll bar added to the
 // trailing edge of the axes in `bar`.
 @(private)
-padding :: proc(n: ^Node, bar: bit_set[ScrollAxis]) -> Padding {
+padding :: proc(n: ^Node, bar: bit_set[ScrollAxis]) -> Edges {
 	p := n.config.Pad
 	if .Vertical in bar   do p.Right  += SCROLLBAR_THICKNESS + SCROLLBAR_GAP
 	if .Horizontal in bar do p.Bottom += SCROLLBAR_THICKNESS + SCROLLBAR_GAP
@@ -120,9 +120,9 @@ padding :: proc(n: ^Node, bar: bit_set[ScrollAxis]) -> Padding {
 // each axis, with the strips it keeps.
 @(private="file")
 inset :: proc(n: ^Node) -> Vec2 {
-	p  := padding(n, n.strips)
-	bw := n.style.Border.Width * 2
-	return {p.Left + p.Right + bw, p.Top + p.Bottom + bw}
+	p := padding(n, n.strips)
+	b := n.style.BorderWidth
+	return {p.Left + p.Right + b.Left + b.Right, p.Top + p.Bottom + b.Top + b.Bottom}
 }
 
 // Flex is a child's record during main-axis distribution: its base size, its flexibility and
@@ -209,14 +209,14 @@ resolve_flex :: proc(items: []Flex, free: f32) {
 // than zero. The padding already carries the strips of the bars it draws.
 @(private)
 inner_rect :: proc(i: u32, rect: Rect) -> Rect #no_bounds_check {
-	n  := &state.nodes[i]
-	p  := padding(n, n.strips)
-	bw := n.style.Border.Width
+	n := &state.nodes[i]
+	p := padding(n, n.strips)
+	b := n.style.BorderWidth
 	return {
-		rect.x + p.Left + bw,
-		rect.y + p.Top + bw,
-		max(rect.w - p.Left - p.Right - bw*2, 0),
-		max(rect.h - p.Top - p.Bottom - bw*2, 0),
+		rect.x + p.Left + b.Left,
+		rect.y + p.Top + b.Top,
+		max(rect.w - p.Left - p.Right - b.Left - b.Right, 0),
+		max(rect.h - p.Top - p.Bottom - b.Top - b.Bottom, 0),
 	}
 }
 

@@ -56,17 +56,17 @@ scrolls :: #force_inline proc "contextless" (n: ^Node, Axis: ScrollAxis) -> bool
 // against the box the node was given, which the arrangement has already set.
 @(private)
 shows_bar :: proc(n: ^Node, Axis: ScrollAxis, content: Vec2) -> bool {
-	p  := n.config.Pad
-	bw := n.style.Border.Width * 2
+	p := n.config.Pad
+	b := n.style.BorderWidth
 
 	#partial switch scroll_mode(n, Axis) {
 	case .Always:
 		return true
 	case .Auto, .Reserve:
 		if Axis == .Vertical {
-			return content.y > max(n.rect.h - p.Top - p.Bottom - bw, 0)
+			return content.y > max(n.rect.h - p.Top - p.Bottom - b.Top - b.Bottom, 0)
 		}
-		return content.x > max(n.rect.w - p.Left - p.Right - bw, 0)
+		return content.x > max(n.rect.w - p.Left - p.Right - b.Left - b.Right, 0)
 	}
 	return false
 }
