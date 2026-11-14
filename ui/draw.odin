@@ -176,6 +176,20 @@ fit_image :: proc(Target: Rect, Source: Vec2, Fit: ImageFit) -> (rect: Rect, uv0
 	return {at.x, at.y, drawn.x, drawn.y}, uv0, uv1
 }
 
+// draw_background paints `Value` over `Rect`, skipping it when fully transparent. A gradient
+// goes top left, top right, bottom right, bottom left, as `Gradient` documents.
+@(private="file")
+draw_background :: proc(Rect: Rect, Value: Background, CornerRadius: CornerRadius) {
+	switch f in Value {
+	case Color:
+		if f.a != 0 do AddRectFilled(&list, Rect, f, CornerRadius)
+	case Gradient:
+		if f[0].a != 0 || f[1].a != 0 || f[2].a != 0 || f[3].a != 0 {
+			AddRectGradient(&list, Rect, f[0], f[1], f[2], f[3], CornerRadius)
+		}
+	}
+}
+
 // draw_node emits node i and then its subtree. A node that clips pushes its inner rect
 // before its content and children, so everything inside is cut to it.
 @(private="file")
@@ -189,9 +203,7 @@ draw_node :: proc(i: u32) #no_bounds_check {
 	corners := n.style.CornerRadius
 
 	if visible {
-		if n.style.Background.a != 0 {
-			AddRectFilled(&list, n.rect, n.style.Background, corners)
-		}
+		draw_background(n.rect, n.style.Background, corners)
 		if n.style.Border.Width > 0 {
 			AddRectStroke(&list, n.rect, n.style.Border.Color, n.style.Border.Width, corners)
 		}

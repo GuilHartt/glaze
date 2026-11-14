@@ -44,9 +44,19 @@ Border :: struct {
 	Width: f32,
 }
 
+// Gradient holds four corner colors: top left, top right, bottom right, bottom left.
+Gradient :: [4]Color
+
+// Background is how a box fills its rect: one flat color, or a gradient. Any corner radius
+// survives, since the gradient samples the position inside the rect, not the corners.
+Background :: union {
+	Color,
+	Gradient,
+}
+
 // Style is how a box paints itself. Any element carries one, leaf or container.
 Style :: struct {
-	Background:   Color,
+	Background:   Background,
 	CornerRadius: CornerRadius,
 	Border:       Border,
 }
