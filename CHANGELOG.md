@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.1] - 2026-11-14
+
+### Added
+
+* `RectOverlaps`, which reports whether two rects share any area
+
+### Fixed
+
+* a scrolling axis clips even when it draws no bar, so `.Never` cuts the content that overflows
+* a text wider than its box still draws, since the cull measures the painted block instead of the inner rect
+* a stroke fills the wedge at each interior vertex, so corners stop notching
+
+### Performance
+
+* a node whose rect misses the clip skips its background, its border, its paint callback and its bar, and its text and image are culled too
+* a convex fill writes one vertex per path point and indexes the fan into them, instead of three vertices per triangle
+* a stroke edge writes one quad, four vertices instead of six
+
 ## [0.6.0] - 2026-11-08
 
 ### Added
