@@ -131,15 +131,15 @@ Image :: proc(
 	return node_id
 }
 
-// Paint adds a sized leaf whose drawing is `Draw` and returns its id, so it needs no Row or
+// Paint adds a sized leaf whose painting is `Fn` and returns its id, so it needs no Row or
 // Column around it. The callback draws inside the rect and emits only shapes.
 Paint :: proc(
-	Draw:   DrawProc,
+	Fn:     PaintProc,
 	Width:  Sizing = {Kind = .Fixed, Grow = 1},
 	Height: Sizing = {Kind = .Fixed, Grow = 1},
 ) -> Id #no_bounds_check {
 	node_id := Open({Width = Width, Height = Height})
-	state.nodes[len(state.nodes) - 1].draw = Draw
+	state.nodes[len(state.nodes) - 1].content = Fn
 	Close()
 	return node_id
 }

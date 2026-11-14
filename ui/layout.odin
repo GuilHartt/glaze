@@ -41,7 +41,6 @@ Node :: struct {
 	content:      Content,
 	id:           Id,
 	subtree_end:  u32,
-	draw:         DrawProc,
 }
 
 TextContent :: struct {
@@ -58,9 +57,14 @@ ImageContent :: struct {
 	config: ImageConfig
 }
 
+// PaintProc is the custom draw leaf: a callback the host supplies, run once the rect is
+// known. It is the content variant a widget uses when text and image do not fit.
+PaintProc :: #type proc(Rect: Rect, List: ^DrawList, Id: Id)
+
 Content :: union {
 	TextContent,
 	ImageContent,
+	PaintProc,
 }
 
 // A layout axis is a ScrollAxis: Horizontal is X and Vertical is Y. A Row lays its
@@ -267,6 +271,7 @@ measure_width :: proc(i: u32) #no_bounds_check {
 	switch &content in n.content {
 	case TextContent:
 		n.content_size, content.lines = label_measure(content, 0)
+	case PaintProc:
 	case ImageContent:
 		n.content_size = {
 			content.handle.Width  / state.screen.dpi,
@@ -328,6 +333,7 @@ measure_height :: proc(i: u32) #no_bounds_check {
 			n.content_size, content.lines = label_measure(content, max(n.rect.w - inset(n).x, 0))
 		}
 	case ImageContent:
+	case PaintProc:
 	case:
 		sum, tallest: f32
 		count := 0

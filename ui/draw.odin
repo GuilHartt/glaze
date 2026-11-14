@@ -47,11 +47,6 @@ DrawList :: struct {
 	texture:    Texture,
 }
 
-// DrawProc runs during the build pass, once the element's rect is known. It receives the
-// element's id, so it can read what Storage holds for it and ask the interaction queries.
-// It must only emit into `List`, never declare elements.
-DrawProc :: #type proc(Rect: Rect, List: ^DrawList, Id: Id)
-
 // Frame is what a backend needs in order to draw one frame.
 Frame :: struct {
 	Vertices: []Vertex,
@@ -207,7 +202,7 @@ draw_node :: proc(i: u32) #no_bounds_check {
 	clip := n.config.Clip || scrolls(n, .Vertical) || scrolls(n, .Horizontal)
 	if clip do PushClipRect(&list, inner_rect(i, n.rect))
 
-	#partial switch content in n.content {
+	switch content in n.content {
 	case TextContent:
 		text_lines := content.lines
 		if len(text_lines) == 0 do break
@@ -238,9 +233,9 @@ draw_node :: proc(i: u32) #no_bounds_check {
 
 		rect, uv0, uv1 := fit_image(inner, {content.handle.Width, content.handle.Height}, content.config.Fit)
 		AddImage(&list, rect, content.handle, content.config.Tint, uv0, uv1)
+	case PaintProc:
+		if visible do content(n.rect, &list, n.id)
 	}
-
-	if n.draw != nil && visible do n.draw(n.rect, &list, n.id)
 
 	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
 		draw_node(c)
