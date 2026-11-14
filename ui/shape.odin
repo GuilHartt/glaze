@@ -14,18 +14,65 @@ AddRectStroke :: proc(List: ^DrawList, Rect: Rect, Tint: Color, Thickness: f32 =
 	path_stroke(List, Tint, Thickness)
 }
 
-// AddRectGradient appends a rectangle fading between its four corner colors.
+// AddRectGradient appends a rectangle fading across its four corner colors.
 AddRectGradient :: proc(
 	List: ^DrawList,
 	Rect: Rect,
-	TopLeft, TopRight, BottomRight, BottomLeft: Color,
+	Colors: Gradient,
 	CornerRadius: CornerRadius = {},
 ) {
-	path_rect(List, Rect, CornerRadius, TopLeft)
-	for &p in List.path {
-		p.col = gradient_at(p.pos, Rect, TopLeft, TopRight, BottomRight, BottomLeft)
-	}
+	path_rect(List, Rect, CornerRadius, Colors[0])
+	path_gradient(List, Rect, Colors)
 	path_fill_convex(List)
+}
+
+// AddCircleGradient appends a filled circle fading across `Colors`, sampled over the box
+// that encloses it.
+AddCircleGradient :: proc(
+	List: ^DrawList,
+	Center: Vec2,
+	Radius: f32,
+	Colors: Gradient,
+	Segments: int = 0,
+) {
+	path_arc_to(List, Center, Radius, 0, math.TAU, Colors[0], Segments)
+	path_gradient(List, {Center.x - Radius, Center.y - Radius, Radius * 2, Radius * 2}, Colors)
+	path_fill_convex(List)
+}
+
+// AddTriangleGradient appends a filled triangle fading across `Colors`, sampled over the box
+// that encloses its three points.
+AddTriangleGradient :: proc(List: ^DrawList, A, B, C: Vec2, Colors: Gradient) {
+	path_line_to(List, A, Colors[0])
+	path_line_to(List, B, Colors[0])
+	path_line_to(List, C, Colors[0])
+	points := [3]Vec2{A, B, C}
+	path_gradient(List, points_box(points[:]), Colors)
+	path_fill_convex(List)
+}
+
+// AddPolygonGradient appends a filled convex polygon fading across `Colors`, sampled over the
+// box that encloses its points.
+AddPolygonGradient :: proc(List: ^DrawList, Points: []Vec2, Colors: Gradient) {
+	for p in Points do path_line_to(List, p, Colors[0])
+	path_gradient(List, points_box(Points), Colors)
+	path_fill_convex(List)
+}
+
+// AddRegularPolygonGradient appends a filled regular polygon with `Sides` sides, fading across
+// `Colors` over the box that encloses it.
+AddRegularPolygonGradient :: proc(
+	List: ^DrawList,
+	Center: Vec2,
+	Sides: int,
+	Radius: f32,
+	Colors: Gradient,
+	Start: f32 = 0,
+) {
+	points: [MAX_POLYGON_SIDES]Vec2
+	p := regular_polygon(points[:], Sides, Center, Radius, Start)
+	if len(p) == 0 do return
+	AddPolygonGradient(List, p, Colors)
 }
 
 // AddCircleFilled appends a filled circle.
@@ -124,9 +171,45 @@ AddImage :: proc(
 	List.texture = previous
 }
 
+// AddImageGradient appends a quad that samples the `UV0`..`UV1` region of `Texture` over
+// `Rect`, fading across `Colors`.
+AddImageGradient :: proc(
+	List:    ^DrawList,
+	Rect:    Rect,
+	Texture: Texture,
+	Colors:  Gradient,
+	UV0:     Vec2 = {0, 0},
+	UV1:     Vec2 = {1, 1},
+) {
+	previous := List.texture
+	List.texture = Texture
+	append_quad_gradient(List, Rect, UV0, UV1, Colors)
+	List.texture = previous
+}
+
 // MAX_POLYGON_SIDES is the largest polygon the regular shape helpers build.
 @(private="file")
 MAX_POLYGON_SIDES :: 64
+
+// path_gradient samples `Colors` at every point of the path, over `Box`.
+@(private="file")
+path_gradient :: proc(List: ^DrawList, Box: Rect, Colors: Gradient) {
+	for &p in List.path {
+		p.col = gradient_at(p.pos, Box, Colors[0], Colors[1], Colors[2], Colors[3])
+	}
+}
+
+// points_box returns the smallest rect that encloses `Points`.
+@(private="file")
+points_box :: proc(Points: []Vec2) -> Rect {
+	if len(Points) == 0 do return {}
+	lo, hi := Points[0], Points[0]
+	for p in Points[1:] {
+		lo = {min(lo.x, p.x), min(lo.y, p.y)}
+		hi = {max(hi.x, p.x), max(hi.y, p.y)}
+	}
+	return {lo.x, lo.y, hi.x - lo.x, hi.y - lo.y}
+}
 
 // path_clear drops the points accumulated so far.
 @(private="file")
@@ -339,6 +422,29 @@ append_quad :: proc(List: ^DrawList, X0, Y0, X1, Y1: f32, UV0, UV1: Vec2, Tint: 
 	append(&List.vertices, Vertex{Pos = {X1, Y0}, UV = {UV1.x, UV0.y}, Color = Tint})
 	append(&List.vertices, Vertex{Pos = {X1, Y1}, UV = {UV1.x, UV1.y}, Color = Tint})
 	append(&List.vertices, Vertex{Pos = {X0, Y1}, UV = {UV0.x, UV1.y}, Color = Tint})
+
+	append(&List.indices, vtx + 0)
+	append(&List.indices, vtx + 1)
+	append(&List.indices, vtx + 2)
+	append(&List.indices, vtx + 0)
+	append(&List.indices, vtx + 2)
+	append(&List.indices, vtx + 3)
+
+	mesh_command(List, 6)
+}
+
+// append_quad_gradient writes four vertices and six indices for a textured quad, one corner
+// color each, and closes its own command.
+@(private="file")
+append_quad_gradient :: proc(List: ^DrawList, Rect: Rect, UV0, UV1: Vec2, Colors: Gradient) {
+	vtx := u32(len(List.vertices))
+	x0, y0 := Rect.x, Rect.y
+	x1, y1 := Rect.x + Rect.w, Rect.y + Rect.h
+
+	append(&List.vertices, Vertex{Pos = {x0, y0}, UV = {UV0.x, UV0.y}, Color = Colors[0]})
+	append(&List.vertices, Vertex{Pos = {x1, y0}, UV = {UV1.x, UV0.y}, Color = Colors[1]})
+	append(&List.vertices, Vertex{Pos = {x1, y1}, UV = {UV1.x, UV1.y}, Color = Colors[2]})
+	append(&List.vertices, Vertex{Pos = {x0, y1}, UV = {UV0.x, UV1.y}, Color = Colors[3]})
 
 	append(&List.indices, vtx + 0)
 	append(&List.indices, vtx + 1)

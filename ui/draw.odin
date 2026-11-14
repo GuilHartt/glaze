@@ -185,7 +185,7 @@ draw_background :: proc(Rect: Rect, Value: Background, CornerRadius: CornerRadiu
 		if f.a != 0 do AddRectFilled(&list, Rect, f, CornerRadius)
 	case Gradient:
 		if f[0].a != 0 || f[1].a != 0 || f[2].a != 0 || f[3].a != 0 {
-			AddRectGradient(&list, Rect, f[0], f[1], f[2], f[3], CornerRadius)
+			AddRectGradient(&list, Rect, f, CornerRadius)
 		}
 	}
 }
