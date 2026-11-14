@@ -214,7 +214,7 @@ draw_node :: proc(i: u32) #no_bounds_check {
 		line_height := n.content_size.y / f32(len(text_lines))
 		for line, index in text_lines {
 			x := inner.x
-			#partial switch content.config.Align {
+			#partial switch content.align {
 			case .Center: x += max((inner.w - line.Width) / 2, 0)
 			case .Right:  x += max(inner.w - line.Width, 0)
 			}
@@ -222,9 +222,9 @@ draw_node :: proc(i: u32) #no_bounds_check {
 				&list,
 				{x, inner.y + line_height * f32(index)},
 				string(content.text)[line.Start:line.End],
-				content.config.Color,
+				content.color,
 				content.font,
-				content.config.Size,
+				content.size,
 			)
 		}
 	case ImageContent:

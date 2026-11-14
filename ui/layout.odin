@@ -43,11 +43,16 @@ Node :: struct {
 	subtree_end:  u32,
 }
 
+// TextContent is a leaf that paints `text` in `font`, at `size` layout units, tinted by
+// `color`. `wrap` and `align` say how it breaks and where each line sits.
 TextContent :: struct {
-	text:   cstring,
-	font:   Font,
-	config: TextConfig,
-	lines:  []Line,
+	text:  cstring,
+	font:  Font,
+	color: Color,
+	size:  f32,
+	wrap:  WrapMode,
+	align: TextAlign,
+	lines: []Line,
 }
 
 // ImageContent is a leaf that paints `handle` over its rect, tinted by `config`. The
@@ -250,7 +255,7 @@ cross_size :: proc(n: ^Node, child: ^Node, space: f32, A: ScrollAxis) -> f32 {
 	size := along(child.base, A)
 	if s.Grow > 0 || (n.config.Align == .Stretch && s.Kind == .Fit) {
 		size = space
-	} else if text, ok := &child.content.(TextContent); ok && text.config.Wrap != .None && s.Kind == .Fit {
+	} else if text, ok := &child.content.(TextContent); ok && text.wrap != .None && s.Kind == .Fit {
 		size = min(size, space)
 	}
 	if s.Min != 0 do size = max(size, s.Min)
@@ -329,7 +334,7 @@ measure_height :: proc(i: u32) #no_bounds_check {
 	n := &state.nodes[i]
 	switch &content in n.content {
 	case TextContent:
-		if content.config.Wrap != .None {
+		if content.wrap != .None {
 			n.content_size, content.lines = label_measure(content, max(n.rect.w - inset(n).x, 0))
 		}
 	case ImageContent:

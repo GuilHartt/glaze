@@ -77,8 +77,8 @@ cached_label :: proc(Content: TextContent, Width: f32) -> ^LabelCache {
 	key := LabelKey{
 		text  = string(Content.text),
 		font  = Content.font,
-		size  = Content.config.Size,
-		mode  = Content.config.Wrap,
+		size  = Content.size,
+		mode  = Content.wrap,
 		width = Width,
 		scale = effective_scale(),
 	}
@@ -118,10 +118,10 @@ label_purge :: proc() {
 @(private="file")
 wrap_block :: proc(Content: TextContent, Width: f32) -> Vec2 {
 	width: f32
-	for line in WrapText(Content.text, Content.font, Content.config.Size, Content.config.Wrap, Width) {
+	for line in WrapText(Content.text, Content.font, Content.size, Content.wrap, Width) {
 		width = max(width, line.Width)
 	}
-	height := MeasureText("", Content.font, Content.config.Size).y * f32(len(lines))
+	height := MeasureText("", Content.font, Content.size).y * f32(len(lines))
 	return {width, height}
 }
 

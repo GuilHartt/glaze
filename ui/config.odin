@@ -44,7 +44,7 @@ Border :: struct {
 	Width: f32,
 }
 
-// Style is how a box paints itself. Only containers carry one.
+// Style is how a box paints itself. Any element carries one, leaf or container.
 Style :: struct {
 	Background:   Color,
 	CornerRadius: CornerRadius,
@@ -71,14 +71,6 @@ WrapMode :: enum u8 { None, Word }
 
 // TextAlign places each line inside the width the label ended up with.
 TextAlign :: enum u8 { Left, Center, Right }
-
-// TextConfig is how a text leaf paints. `Size` is in layout units.
-TextConfig :: struct {
-	Color: Color,
-	Size:  f32,
-	Wrap:  WrapMode,
-	Align: TextAlign,
-}
 
 // ImageFit is how an image fills the rect it was given.
 ImageFit :: enum u8 {

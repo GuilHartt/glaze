@@ -93,36 +93,43 @@ Column :: proc(Config: LayoutConfig = {}, Style: Style = {}) -> bool {
 	return true
 }
 
-// Label adds a text leaf to the open node and returns its id, so it can be the target of
-// Hovered/Clicked.
+// Label adds a text leaf and returns its id, so it can be the target of Hovered/Clicked. `Color`
+// and `Size` stay loose since a zero color is a real value; the rest size and paint the leaf.
 Label :: proc(
-	Text:  cstring,
-	Color: Color = {255, 255, 255, 255},
-	Size:  f32 = 16,
-	Font:  Font = 0,
-	Wrap:  WrapMode = .None,
-	Align: TextAlign = .Left,
+	Text:   cstring,
+	Width:  Sizing = {},
+	Height: Sizing = {},
+	Color:  Color = {255, 255, 255, 255},
+	Size:   f32 = 16,
+	Font:   Font = 0,
+	Wrap:   WrapMode = .None,
+	Align:  TextAlign = .Left,
+	Style:  Style = {},
 ) -> Id #no_bounds_check {
-	node_id := Open()
+	node_id := Open({Width = Width, Height = Height}, Style)
 	state.nodes[len(state.nodes)-1].content = TextContent{
-		text = Text,
-		font = Font,
-		config = TextConfig{Color = Color, Size = Size, Wrap = Wrap, Align = Align},
+		text  = Text,
+		font  = Font,
+		color = Color,
+		size  = Size,
+		wrap  = Wrap,
+		align = Align,
 	}
 	Close()
 	return node_id
 }
 
 // Image adds an image leaf and returns its id. `Width` and `Height` size the leaf, defaulting
-// to the texture size, and `Fit` is how the texture fills the rect.
+// to the texture size, `Fit` is how the texture fills the rect, and `Style` paints the box.
 Image :: proc(
 	Handle: Texture,
 	Width:  Sizing = {},
 	Height: Sizing = {},
 	Tint:   Color = {255, 255, 255, 255},
 	Fit:    ImageFit = .Stretch,
+	Style:  Style = {},
 ) -> Id #no_bounds_check {
-	node_id := Open({Width = Width, Height = Height})
+	node_id := Open({Width = Width, Height = Height}, Style)
 	state.nodes[len(state.nodes)-1].content = ImageContent{
 		handle = Handle,
 		config = ImageConfig{Tint = Tint, Fit = Fit},
@@ -137,8 +144,9 @@ Paint :: proc(
 	Fn:     PaintProc,
 	Width:  Sizing = {Kind = .Fixed, Grow = 1},
 	Height: Sizing = {Kind = .Fixed, Grow = 1},
+	Style:  Style = {},
 ) -> Id #no_bounds_check {
-	node_id := Open({Width = Width, Height = Height})
+	node_id := Open({Width = Width, Height = Height}, Style)
 	state.nodes[len(state.nodes) - 1].content = Fn
 	Close()
 	return node_id
