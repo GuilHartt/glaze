@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.7.0] - 2026-11-14
+
+### Added
+
+* `Gradient`, the four corner colors a fade is made of
+* `AddCircleGradient`, `AddTriangleGradient`, `AddPolygonGradient`, `AddRegularPolygonGradient` and `AddImageGradient`, so every filled shape takes a fade
+* `Edges`, one length per side, and `Edge` to build it
+
+### Changed
+
+* `PaintProc` replaces `DrawProc` and joins `Content`, so a custom leaf carries its own painting instead of a field on the node
+* `Label`, `Image` and `Paint` take `Style`, `Width` and `Height`, so a leaf paints a box and takes a size without a `Row` or `Column` around it
+* `Style.Background` is a `Background`, either one flat color or a `Gradient`
+* `Style` carries `BorderColor` and `BorderWidth` as two fields, and `BorderWidth` measures each side, so a box underlines one side or rules between children
+* `AddRectGradient` takes one `Gradient` instead of four loose colors
+* `TextConfig` is gone, and its fields live on `TextContent`
+* `Padding` is now `Edges` and `Pad` is now `Edge`, since the type also measures border thickness
+* the three leaves take the payload, then the sizing, then the look, then the style, in that order
+* an equal border on every side keeps the corner radius, and sides that differ paint as plain edges
+
+### Removed
+
+* `DrawProc`, replaced by `PaintProc`
+* `Border`, replaced by `Style.BorderColor` and `Style.BorderWidth`
+* `TextConfig`, since its fields moved to `TextContent`
+
+### Fixed
+
+* `inset`, `inner_rect` and the scroll bar measure the border per side instead of twice one width
+
 ## [0.6.1] - 2026-11-14
 
 ### Added
