@@ -1,28 +1,25 @@
 #+feature global-context
 package ui
 
-import "base:sanitizer"
 import "core:strings"
 import "vendor:fontstash"
 
-// Line is one wrapped line: the byte range it covers in the source, and the width
-// it takes in layout units.
+// Line is one wrapped line: the byte range it covers in the source and the width it takes
+// in layout units.
 Line :: struct {
 	Start, End: u32,
 	Width:      f32,
 }
 
-// lines is the scratch the wrap writes into, so a frame reuses its capacity instead
-// of allocating once per label.
+// lines is the scratch the wrap writes into, so a frame reuses its capacity.
 @(private) lines: [dynamic]Line
 
-// stale is the scratch the purge collects keys in before deleting them, so a frame
-// does not allocate to walk the cache.
+// stale is the scratch the purge collects keys in before deleting them.
 @(private="file") stale: [dynamic]LabelKey
 
-// LabelKey is what a wrapped result depends on: the words themselves, and the font,
-// size, mode, width and scale they were broken for. Text that matches shares one entry,
-// and the cache owns a copy of `text`, so a key outlives the caller's buffer.
+// LabelKey is what a wrapped result depends on: the words, and the font, size, mode, width
+// and scale they were broken for. Text that matches shares one entry, and the cache owns a
+// copy of `text`, so a key outlives the caller's buffer.
 LabelKey :: struct {
 	text:  string,
 	font:  Font,
@@ -32,11 +29,10 @@ LabelKey :: struct {
 	scale: f32,
 }
 
-// LabelCache is the wrapped layout of one text, keyed by everything that would
-// invalidate it. `frame` is what the purge reads to drop the entries no label asked
-// for.
+// LabelCache is the wrapped layout of one text. `tick` is what the purge reads to drop the
+// entries no label asked for.
 LabelCache :: struct {
-	frame: u32,
+	tick:  u32,
 	block: Vec2,
 	lines: [dynamic]Line,
 }
@@ -44,10 +40,9 @@ LabelCache :: struct {
 @(private="file")
 label_cache: map[LabelKey]LabelCache
 
-// WrapText breaks `Text` into lines according to `Mode`, measuring with `Font` at
-// `Size`. The input and the line widths are in layout units. A line is a byte range in
-// the source, so no text is copied, and the result is valid until the next call. Every
-// mode breaks at the newlines, and only Word breaks by `MaxWidth` as well.
+// WrapText breaks `Text` into lines according to `Mode`, measuring with `Font` at `Size`. A
+// line is a byte range in the source, so no text is copied, and the result is valid until
+// the next call. Every mode breaks at the newlines, and only `Word` breaks by `MaxWidth`.
 WrapText :: proc(Text: cstring, Font: Font, Size: f32, Mode: WrapMode, MaxWidth: f32) -> []Line {
 	clear(&lines)
 	if Text == nil || Size <= 0 do return lines[:]
@@ -57,7 +52,7 @@ WrapText :: proc(Text: cstring, Font: Font, Size: f32, Mode: WrapMode, MaxWidth:
 	fontstash.SetSize(&font_ctx, Size * scale)
 
 	src, space := string(Text), measure(" ")
-	limit := MaxWidth  * scale if Mode == .Word else f32(0)
+	limit := MaxWidth * scale if Mode == .Word else f32(0)
 	start: int
 	for i in 0 ..= len(src) {
 		if i < len(src) && src[i] != '\n' do continue
@@ -67,17 +62,16 @@ WrapText :: proc(Text: cstring, Font: Font, Size: f32, Mode: WrapMode, MaxWidth:
 	return lines[:]
 }
 
-// label_measure returns the block size a text takes at `Width` and the lines it broke
-// into, wrapping when the key changed and reusing the entry otherwise. The measure
-// pass keeps both on the node, so the draw never asks twice.
+// label_measure returns the block size a text takes at `Width` and the lines it broke into,
+// reusing the cached entry when the key did not change.
 @(private)
 label_measure :: proc(Content: TextContent, Width: f32) -> (block: Vec2, broken: []Line) {
 	cached := cached_label(Content, Width)
 	return cached.block, cached.lines[:]
 }
 
-// cached_label returns the entry for this text, wrapping again when the key changed,
-// and marks it as used in the current frame.
+// cached_label returns the entry for this text, wrapping again when the key changed, and
+// marks it as used in the current tick.
 @(private="file")
 cached_label :: proc(Content: TextContent, Width: f32) -> ^LabelCache {
 	key := LabelKey{
@@ -90,14 +84,14 @@ cached_label :: proc(Content: TextContent, Width: f32) -> ^LabelCache {
 	}
 
 	if cached, ok := &label_cache[key]; ok {
-		cached.frame = state.frame
+		cached.tick = state.tick
 		return cached
 	}
 
 	key.text = strings.clone(key.text)
 	block := wrap_block(Content, Width)
 
-	label_cache[key] = LabelCache{frame = state.frame, block = block}
+	label_cache[key] = LabelCache{tick = state.tick, block = block}
 	cached := &label_cache[key]
 
 	resize(&cached.lines, len(lines))
@@ -105,13 +99,12 @@ cached_label :: proc(Content: TextContent, Width: f32) -> ^LabelCache {
 	return cached
 }
 
-// label_purge drops the entries no label asked for in the frame that just ended, so a
-// text that disappears does not keep its lines forever.
+// label_purge drops the entries no label asked for in the tick that just ended.
 @(private)
 label_purge :: proc() {
 	clear(&stale)
 	for key, cached in label_cache {
-		if cached.frame != state.frame do append(&stale, key)
+		if cached.tick != state.tick do append(&stale, key)
 	}
 	for key in stale {
 		if cached, ok := label_cache[key]; ok do delete(cached.lines)
@@ -120,8 +113,8 @@ label_purge :: proc() {
 	}
 }
 
-// wrap_block wraps the text once and returns the size of the block it forms: the
-// widest line by the stacked line heights.
+// wrap_block wraps the text once and returns the size of the block it forms: the widest
+// line by the stacked line heights.
 @(private="file")
 wrap_block :: proc(Content: TextContent, Width: f32) -> Vec2 {
 	width: f32
@@ -132,9 +125,8 @@ wrap_block :: proc(Content: TextContent, Width: f32) -> Vec2 {
 	return {width, height}
 }
 
-// wrap_paragraph appends the lines of one paragraph, which holds no newline, and
-// never splits a word: one wider than the line overflows it, which is what the web
-// does by default.
+// wrap_paragraph appends the lines of one paragraph, which holds no newline, and never
+// splits a word: one wider than the line overflows it, which is what the web does.
 @(private="file")
 wrap_paragraph :: proc(P: string, Offset: int, MaxWidth, Space: f32, Scale: f32) {
 	if len(P) == 0 {
@@ -171,8 +163,7 @@ wrap_paragraph :: proc(P: string, Offset: int, MaxWidth, Space: f32, Scale: f32)
 	}
 }
 
-// measure returns the width `Text` takes. It measures the slice itself, since
-// fontstash reads a length and not a terminator, and it assumes WrapText already set
-// the font and the size.
+// measure returns the width `Text` takes. It measures the slice itself, since fontstash
+// reads a length and not a terminator.
 @(private="file")
 measure :: proc(Text: string) -> f32 { return fontstash.TextBounds(&font_ctx, Text) }

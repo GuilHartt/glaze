@@ -8,8 +8,8 @@ MouseButton :: enum u8 {Left, Right, Middle}
 // Modifier identifies a keyboard modifier, independent of its left/right key.
 Modifier :: enum u8 {Shift, Ctrl, Alt, Super}
 
-// Key identifies a physical key. Letters, digits and symbols map to the US
-// layout; the backend should report the physical key, not the produced text.
+// Key identifies a physical key. Letters, digits and symbols map to the US layout; the backend
+// should report the physical key, not the produced text.
 Key :: enum u8 {
 	A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
 	Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9,
@@ -30,9 +30,8 @@ Key :: enum u8 {
 	KpDecimal, KpDivide, KpMultiply, KpSubtract, KpAdd, KpEnter, KpEqual,
 }
 
-// Input holds the input state for the current frame. The backend fills it
-// through the Add* procedures and widgets read it through the query
-// procedures; widgets never touch a backend directly.
+// Input holds the input state for the current frame. The backend fills it through the Add*
+// procedures and widgets read it through the query procedures.
 Input :: struct {
 	Pos:         Vec2,
 	PrevPos:     Vec2,
@@ -51,8 +50,8 @@ Input :: struct {
 @(private)
 input: Input
 
-// input_end_frame snapshots the current state for the next frame's edge
-// queries and clears the per-frame accumulators. Called by End.
+// input_end_frame snapshots the current state for the next tick's edge queries and clears the
+// per-frame accumulators. Called by End.
 @(private)
 input_end_frame :: proc() {
 	input.PrevPos = input.Pos
@@ -119,40 +118,38 @@ ModifierDown :: proc(Mod: Modifier) -> bool {
 	return false
 }
 
-// TextInput returns the text typed this frame as a null-terminated string. The
-// returned pointer is only valid until the end of the frame.
+// TextInput returns the text typed this frame as a null-terminated string, valid until the end
+// of the frame.
 TextInput :: proc() -> cstring {
 	return cstring(raw_data(input.Text))
 }
 
-// GetClipboard returns the system clipboard contents, using the callback bound
-// with BindClipboard. Returns nil when no callback is bound.
+// GetClipboard returns the system clipboard contents, using the callback bound with
+// BindClipboard. Returns nil when no callback is bound.
 GetClipboard :: proc() -> cstring {
 	if input.ClipboardGet == nil do return nil
 	return input.ClipboardGet(input.ClipboardUser)
 }
 
-// SetClipboard copies `Text` to the system clipboard, using the callback bound
-// with BindClipboard. Does nothing when no callback is bound.
+// SetClipboard copies `Text` to the system clipboard, using the callback bound with
+// BindClipboard. Does nothing when no callback is bound.
 SetClipboard :: proc(Text: cstring) {
 	if input.ClipboardSet != nil {
 		input.ClipboardSet(Text, input.ClipboardUser)
 	}
 }
 
-// AddMousePos feeds the pointer position, in screen units. Call it once per frame,
-// or once per pointer-move event.
+// AddMousePos feeds the pointer position, in screen units. Call it once per frame, or once per
+// pointer-move event.
 AddMousePos :: proc(Pos: Vec2) { input.Pos = Pos / state.screen.ui }
 
-// AddMouseButton feeds a mouse button transition. `Down` is the new held state.
-// Call it on every press and release.
+// AddMouseButton feeds a mouse button transition. Call it on every press and release.
 AddMouseButton :: proc(Button: MouseButton, Down: bool) { input.Buttons[Button] = Down }
 
 // AddMouseWheel feeds a wheel delta. Multiple calls in a frame accumulate.
 AddMouseWheel :: proc(Delta: Vec2) { input.Wheel += Delta }
 
-// AddKey feeds a key transition. `Down` is the new held state. Call it on every
-// press and release.
+// AddKey feeds a key transition. Call it on every press and release.
 AddKey :: proc(Key: Key, Down: bool) {
 	if Down {
 		input.Keys += {Key}
@@ -161,8 +158,7 @@ AddKey :: proc(Key: Key, Down: bool) {
 	}
 }
 
-// AddTypedText feeds text typed this frame. Append per character/commit event;
-// the backend must pass it already decoded to UTF-8.
+// AddTypedText feeds text typed this frame. The backend must pass it already decoded to UTF-8.
 AddTypedText :: proc(Text: cstring) {
 	if Text == nil do return
 	drop_terminator()
@@ -170,8 +166,7 @@ AddTypedText :: proc(Text: cstring) {
 	append(&input.Text, 0)
 }
 
-// AddTypedRune feeds a single typed character. Use it when the backend reports
-// input as Unicode code points (e.g. raylib's GetCharPressed).
+// AddTypedRune feeds a single typed character, for backends that report input as code points.
 AddTypedRune :: proc(R: rune) {
 	drop_terminator()
 	buf, n := utf8.encode_rune(R)
@@ -187,9 +182,8 @@ drop_terminator :: proc() {
 	}
 }
 
-// BindClipboard registers the backend callbacks used by GetClipboard and
-// SetClipboard, so clipboard access stays backend-independent. `User` is passed
-// back to both callbacks.
+// BindClipboard registers the backend callbacks used by GetClipboard and SetClipboard, so
+// clipboard access stays backend-independent.
 BindClipboard :: proc(
 	Get: proc(User: rawptr) -> cstring,
 	Set: proc(Text: cstring, User: rawptr),
@@ -208,14 +202,13 @@ Time :: struct {
 @(private)
 time: Time
 
-// DeltaTime returns the time elapsed since the previous frame, in seconds. Use
-// it to drive animation and any time-based widget.
+// DeltaTime returns the time elapsed since the previous frame, in seconds.
 DeltaTime :: proc() -> f32 {
 	return time.Delta
 }
 
-// AddDeltaTime feeds the time elapsed since the previous frame, in seconds. Call
-// it once per frame, before Begin.
+// AddDeltaTime feeds the time elapsed since the previous frame, in seconds. Call it once per
+// frame, before Begin.
 AddDeltaTime :: proc(Delta: f32) {
 	time.Delta = Delta
 }

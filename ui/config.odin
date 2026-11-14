@@ -22,8 +22,8 @@ Padding :: struct {Left, Right, Top, Bottom: f32}
 // SizeKind is how a sizing treats its `Basis`.
 SizeKind :: enum u8 { Fit, Fixed }
 
-// Sizing is one axis of an element's size: a base from `Kind` and `Basis`, how it
-// takes a share of the parent's leftover space, and its bounds.
+// Sizing is one axis of an element's size: a base from `Kind` and `Basis`, how it takes a
+// share of the parent's leftover space, and its bounds.
 Sizing :: struct {
 	Kind:   SizeKind,
 	Basis:  f32,
@@ -33,8 +33,7 @@ Sizing :: struct {
 	Max:    f32,
 }
 
-// CornerRadius holds the radius of each corner, so one rectangle can round its
-// corners independently.
+// CornerRadius holds the radius of each corner, so one rectangle rounds them independently.
 CornerRadius :: struct {
 	TopLeft, TopRight, BottomRight, BottomLeft: f32,
 }
@@ -52,38 +51,8 @@ Style :: struct {
 	Border:       Border,
 }
 
-// ScrollAxis is one axis a box can scroll along.
-ScrollAxis :: enum u8 { Horizontal, Vertical }
-
-// ScrollMode is how one axis scrolls.
-ScrollMode :: enum u8 {
-	Disabled,
-	Auto,
-	Always,
-	Never,
-	Reserve,
-}
-
-// Scroll is how each axis of a box scrolls. An axis that scrolls is clipped and its
-// content can move inside the box; the mode decides whether a bar is drawn and
-// whether its strip is taken from the content.
-Scroll :: struct {
-	Horizontal, Vertical: ScrollMode,
-}
-
-// SCROLLBAR_THICKNESS is the width a scroll bar takes from the content box. It counts
-// as padding on the trailing edge of the axis the bar runs along.
-@(private)
-SCROLLBAR_THICKNESS :: f32(6)
-
-// SCROLLBAR_GAP is the space kept between the content and the bar, so the bar does not
-// touch what it scrolls.
-@(private)
-SCROLLBAR_GAP :: f32(4)
-
-// LayoutConfig is how an element is sized and how it places its children. A
-// container with `Hit` claims every hit inside its rect, including the padding
-// and the parts its children paint over.
+// LayoutConfig is how an element is sized and how it places its children. A container with
+// `Hit` claims every hit inside its rect, padding included.
 LayoutConfig :: struct {
 	Width:   Sizing,
 	Height:  Sizing,
@@ -96,14 +65,11 @@ LayoutConfig :: struct {
 	Hit:     bool,
 }
 
-// WrapMode is how a label breaks its text. Both modes break at the newlines the text
-// has. None never breaks by width, so the label is as wide as its longest line. Word
-// also breaks between words when a line does not fit the width it was given.
+// WrapMode is how a label breaks its text. Both modes break at the newlines the text has;
+// `Word` also breaks between words when a line does not fit the width it was given.
 WrapMode :: enum u8 { None, Word }
 
-// TextAlign places each line inside the width the label ended up with. It moves the
-// lines that are shorter than that width, which a wrapped label has when its box is
-// wider than its text.
+// TextAlign places each line inside the width the label ended up with.
 TextAlign :: enum u8 { Left, Center, Right }
 
 // TextConfig is how a text leaf paints. `Size` is in layout units.
@@ -121,8 +87,8 @@ ImageFit :: enum u8 {
 	Cover,
 }
 
-// ImageConfig is how an image leaf paints. `Tint` multiplies the texture and `Fit` is
-// how it fills the rect.
+// ImageConfig is how an image leaf paints. `Tint` multiplies the texture and `Fit` is how
+// it fills the rect.
 ImageConfig :: struct {
 	Tint: Color,
 	Fit:  ImageFit,
@@ -133,8 +99,8 @@ Corners :: #force_inline proc "contextless" (All: f32) -> CornerRadius {
 	return {TopLeft = All, TopRight = All, BottomRight = All, BottomLeft = All}
 }
 
-// Pad builds a Padding: Pad(All) puts `All` on every side, Pad(X, Y) puts `X` on
-// the left and right and `Y` on the top and bottom.
+// Pad builds a Padding: Pad(All) puts `All` on every side, Pad(X, Y) puts `X` on the left
+// and right and `Y` on the top and bottom.
 Pad :: proc{pad_all, pad_xy}
 
 // pad_all returns the padding with `All` on every side.
@@ -143,8 +109,7 @@ pad_all :: #force_inline proc(All: f32) -> Padding {
 	return {Left = All, Right = All, Top = All, Bottom = All}
 }
 
-// pad_xy returns the padding with `X` on the left and right and `Y` on the top
-// and bottom.
+// pad_xy returns the padding with `X` on the left and right and `Y` on the top and bottom.
 @(private="file")
 pad_xy :: #force_inline proc(X, Y: f32) -> Padding {
 	return {Left = X, Right = X, Top = Y, Bottom = Y}
@@ -156,8 +121,8 @@ Grow :: #force_inline proc "contextless" (Weight: f32 = 1, Shrink: f32 = 1) -> S
 	return {Kind = .Fit, Grow = Weight, Shrink = Shrink}
 }
 
-// Fill returns a sizing whose base is zero and that divides the parent's space
-// by `Weight` (ignoring content). Use it for equal-sized children.
+// Fill returns a sizing whose base is zero and that divides the parent's space by `Weight`,
+// ignoring content. Use it for equal-sized children.
 Fill :: #force_inline proc "contextless" (Weight: f32 = 1, Shrink: f32 = 1) -> Sizing {
 	return {Kind = .Fixed, Grow = Weight, Shrink = Shrink}
 }

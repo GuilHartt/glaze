@@ -1,10 +1,9 @@
 package ui
 
-import "core:math"
 import "vendor:fontstash"
 
-// Vertex is one point of the frame's mesh: position in pixels, atlas coordinate
-// and flat color. Color per vertex is what lets any shape carry a gradient.
+// Vertex is one point of the frame's mesh: position in layout units, atlas coordinate and
+// flat color. Color per vertex is what lets any shape carry a gradient.
 Vertex :: struct #packed {
 	Pos:   Vec2,
 	UV:    Vec2,
@@ -19,8 +18,8 @@ Texture :: struct {
 	Height: f32,
 }
 
-// DrawCommand is one draw call: a slice of the index buffer, drawn with one
-// texture, clipped to one rect.
+// DrawCommand is one draw call: a slice of the index buffer, drawn with one texture,
+// clipped to one rect.
 DrawCommand :: struct {
 	Clip:    Rect,
 	Texture: Texture,
@@ -28,16 +27,16 @@ DrawCommand :: struct {
 	Count:   u32,
 }
 
-// PathPoint is one point of the path being built: where it is and the color it
-// carries, which is what lets any shape fade from one color to another.
-@(private="file")
+// PathPoint is one point of the path being built: where it is and the color it carries,
+// which is what lets any shape fade.
+@(private)
 PathPoint :: struct {
 	pos: Vec2,
 	col: Color,
 }
 
-// DrawList is the shape buffer of one frame. Shapes append in call order, so later
-// calls paint over earlier ones.
+// DrawList is the shape buffer of one frame. Shapes append in call order, so later calls
+// paint over earlier ones.
 DrawList :: struct {
 	vertices:   [dynamic]Vertex,
 	indices:    [dynamic]u32,
@@ -48,10 +47,9 @@ DrawList :: struct {
 	texture:    Texture,
 }
 
-// DrawProc runs during the build pass, once the element's rect is known. It receives
-// the element's own id, so it can read what Storage holds for it and ask the
-// interaction queries about it. It must only emit into `List`, never declare
-// elements.
+// DrawProc runs during the build pass, once the element's rect is known. It receives the
+// element's id, so it can read what Storage holds for it and ask the interaction queries.
+// It must only emit into `List`, never declare elements.
 DrawProc :: #type proc(Rect: Rect, List: ^DrawList, Id: Id)
 
 // Frame is what a backend needs in order to draw one frame.
@@ -65,146 +63,53 @@ Frame :: struct {
 @(private="file")
 list: DrawList
 
-// DrawData returns the mesh and draw commands of the last completed frame. The
-// slices are only valid until the next call to Begin.
+// DrawData returns the mesh and draw commands of the last completed frame. The slices are
+// only valid until the next call to Begin.
 DrawData :: proc() -> Frame {
 	return {list.vertices[:], list.indices[:], list.commands[:], effective_scale()}
 }
 
-// AddRectFilled appends one filled rectangle, rounding each corner by its own
-// radius.
-AddRectFilled :: proc(List: ^DrawList, Rect: Rect, Tint: Color, CornerRadius: CornerRadius = {}) {
-	path_rect(List, Rect, CornerRadius, Tint)
-	path_fill_convex(List)
+// PushClipRect narrows the visible area to `Rect` for everything appended after it. The
+// new clip is the overlap with the current one, so nesting only shrinks it.
+PushClipRect :: proc(List: ^DrawList, Rect: Rect) {
+	append(&List.clip_stack, List.clip)
+	List.clip = RectIntersect(List.clip, Rect)
 }
 
-// AddRectStroke appends the outline of a rectangle, `Thickness` pixels wide.
-AddRectStroke :: proc(List: ^DrawList, Rect: Rect, Tint: Color, Thickness: f32 = 1, CornerRadius: CornerRadius = {}) {
-	path_rect(List, Rect, CornerRadius, Tint)
-	path_stroke(List, Tint, Thickness)
+// PopClipRect restores the clip saved by the matching PushClipRect.
+PopClipRect :: proc(List: ^DrawList) {
+	assert(len(List.clip_stack) > 0, "PopClipRect without a matching PushClipRect")
+	List.clip = pop(&List.clip_stack)
 }
 
-// AddRectGradient appends a rectangle fading between its four corner colors,
-// rounding each corner by its own radius.
-AddRectGradient :: proc(
-	List: ^DrawList,
-	Rect: Rect,
-	TopLeft, TopRight, BottomRight, BottomLeft: Color,
-	CornerRadius: CornerRadius = {},
-) {
-	path_rect(List, Rect, CornerRadius, TopLeft)
-	for &p in List.path {
-		p.col = gradient_at(p.pos, Rect, TopLeft, TopRight, BottomRight, BottomLeft)
+// mesh_command grows the last draw command when it still matches, or opens a new one
+// covering the indices just written.
+@(private)
+mesh_command :: proc(List: ^DrawList, Count: u32) {
+	if len(List.commands) > 0 {
+		last := &List.commands[len(List.commands) - 1]
+		if last.Texture == List.texture && last.Clip == List.clip {
+			last.Count += Count
+			return
+		}
 	}
-	path_fill_convex(List)
+	append(&List.commands, DrawCommand{
+		Clip    = List.clip,
+		Texture = List.texture,
+		Offset  = u32(len(List.indices)) - Count,
+		Count   = Count,
+	})
 }
 
-// AddCircleFilled appends a filled circle.
-AddCircleFilled :: proc(List: ^DrawList, Center: Vec2, Radius: f32, Tint: Color, Segments: int = 0) {
-	path_arc_to(List, Center, Radius, 0, 2 * math.PI, Tint, Segments)
-	path_fill_convex(List)
-}
-
-// AddCircleStroke appends a circle outline.
-AddCircleStroke :: proc(List: ^DrawList, Center: Vec2, Radius: f32, Tint: Color, Thickness: f32 = 1, Segments: int = 0) {
-	path_arc_to(List, Center, Radius, 0, 2 * math.PI, Tint, Segments)
-	path_stroke(List, Tint, Thickness)
-}
-
-// AddArc appends an arc outline from `A0` to `A1` radians.
-AddArc :: proc(List: ^DrawList, Center: Vec2, Radius: f32, A0, A1: f32, Tint: Color, Thickness: f32 = 1, Segments: int = 0) {
-	path_arc_to(List, Center, Radius, A0, A1, Tint, Segments)
-	path_stroke(List, Tint, Thickness, Closed = false)
-}
-
-// AddTriangleFilled appends a filled triangle.
-AddTriangleFilled :: proc(List: ^DrawList, A, B, C: Vec2, Tint: Color) {
-	path_line_to(List, A, Tint)
-	path_line_to(List, B, Tint)
-	path_line_to(List, C, Tint)
-	path_fill_convex(List)
-}
-
-// AddTriangleStroke appends the outline of a triangle, `Thickness` pixels wide.
-AddTriangleStroke :: proc(List: ^DrawList, A, B, C: Vec2, Tint: Color, Thickness: f32 = 1) {
-	path_line_to(List, A, Tint)
-	path_line_to(List, B, Tint)
-	path_line_to(List, C, Tint)
-	path_stroke(List, Tint, Thickness)
-}
-
-// AddLine appends a line segment `Thickness` wide.
-AddLine :: proc(List: ^DrawList, A, B: Vec2, Tint: Color, Thickness: f32 = 1) {
-	path_line_to(List, A, Tint)
-	path_line_to(List, B, Tint)
-	path_stroke(List, Tint, Thickness, Closed = false)
-}
-
-// AddPolygonFilled appends a filled convex polygon.
-AddPolygonFilled :: proc(List: ^DrawList, Points: []Vec2, Tint: Color) {
-	for p in Points do path_line_to(List, p, Tint)
-	path_fill_convex(List)
-}
-
-// AddPolygonStroke appends the outline of a polygon through `Points`, `Thickness`
-// wide. Pass `Closed = false` to trace an open polyline instead.
-AddPolygonStroke :: proc(List: ^DrawList, Points: []Vec2, Tint: Color, Thickness: f32 = 1, Closed: bool = true) {
-	for p in Points do path_line_to(List, p, Tint)
-	path_stroke(List, Tint, Thickness, Closed)
-}
-
-// AddRegularPolygonFilled appends a filled regular polygon with `Sides` sides.
-// `Start` is the angle of the first vertex, in radians.
-AddRegularPolygonFilled :: proc(List: ^DrawList, Center: Vec2, Sides: int, Radius: f32, Tint: Color, Start: f32 = 0) {
-	points: [MAX_POLYGON_SIDES]Vec2
-	p := regular_polygon(points[:], Sides, Center, Radius, Start)
-	if len(p) == 0 do return
-	AddPolygonFilled(List, p, Tint)
-}
-
-// AddRegularPolygonStroke appends the outline of a regular polygon with `Sides`
-// sides, `Thickness` pixels wide. `Start` is the angle of the first vertex, in
-// radians.
-AddRegularPolygonStroke :: proc(
-	List: ^DrawList,
-	Center: Vec2,
-	Sides: int,
-	Radius: f32,
-	Tint: Color,
-	Thickness: f32 = 1,
-	Start: f32 = 0,
-) {
-	points: [MAX_POLYGON_SIDES]Vec2
-	p := regular_polygon(points[:], Sides, Center, Radius, Start)
-	if len(p) == 0 do return
-	AddPolygonStroke(List, p, Tint, Thickness)
-}
-
-// AddImage appends a quad that samples the `UV0`..`UV1` region of `Handle` over `Rect`,
-// tinted by `Tint`. The list only records the handle.
-AddImage :: proc(
-	List:   ^DrawList,
-	Rect:   Rect,
-	Handle: Texture,
-	Tint:   Color,
-	UV0:    Vec2 = {0, 0},
-	UV1:    Vec2 = {1, 1},
-) {
-	previous := List.texture
-	List.texture = Handle
-	append_quad(List, Rect.x, Rect.y, Rect.x + Rect.w, Rect.y + Rect.h, UV0, UV1, Tint)
-	List.texture = previous
-}
-
-// AddText appends `Text` with its top left corner at `Pos`. `Pos` and `Size` are in
-// layout units.
+// AddText appends `Text` with its top left corner at `Pos`. `Pos` and `Size` are in layout
+// units.
 AddText :: proc(List: ^DrawList, Pos: Vec2, Text: cstring, Tint: Color, Font: Font = 0, Size: f32 = 16) {
 	if Text == nil do return
 	add_text_run(List, Pos, string(Text), Tint, Font, Size)
 }
 
-// add_text_run appends a run that needs no terminator, so a wrapped line is drawn as
-// the slice of the source it already is.
+// add_text_run appends a run that needs no terminator, so a wrapped line is drawn as the
+// slice of the source it already is.
 @(private="file")
 add_text_run :: proc(List: ^DrawList, Pos: Vec2, Run: string, Tint: Color, Font: Font, Size: f32) {
 	if len(Run) == 0 || len(font_ctx.fonts) == 0 || Size <= 0 do return
@@ -231,304 +136,6 @@ add_text_run :: proc(List: ^DrawList, Pos: Vec2, Run: string, Tint: Color, Font:
 	List.texture = previous
 }
 
-// PushClipRect narrows the visible area to `Rect` for everything appended after
-// it. The new clip is the overlap with the current one, so nesting only ever
-// shrinks it.
-PushClipRect :: proc(List: ^DrawList, Rect: Rect) {
-	append(&List.clip_stack, List.clip)
-	List.clip = RectIntersect(List.clip, Rect)
-}
-
-// PopClipRect restores the clip saved by the matching PushClipRect.
-PopClipRect :: proc(List: ^DrawList) {
-	assert(len(List.clip_stack) > 0, "PopClipRect without a matching PushClipRect")
-	List.clip = pop(&List.clip_stack)
-}
-
-// mesh_command grows the last draw command when it still matches, or opens a new
-// one covering the indices just written.
-@(private="file")
-mesh_command :: proc(List: ^DrawList, Count: u32) {
-	if len(List.commands) > 0 {
-		last := &List.commands[len(List.commands) - 1]
-		if last.Texture == List.texture && last.Clip == List.clip {
-			last.Count += Count
-			return
-		}
-	}
-	append(&List.commands, DrawCommand{
-		Clip    = List.clip,
-		Texture = List.texture,
-		Offset  = u32(len(List.indices)) - Count,
-		Count   = Count,
-	})
-}
-
-// use_atlas points the list at the font atlas and returns the atlas coordinate of
-// its white texel, so a solid fill lands in the same draw call as the text around
-// it. The coordinate is the center of the first texel, which the atlas reserves as
-// white; the texel corner would land on a filter boundary.
-@(private="file")
-use_atlas :: #force_inline proc(List: ^DrawList) -> Vec2 {
-	List.texture = atlas_texture
-	return {0.5 / f32(font_ctx.width), 0.5 / f32(font_ctx.height)}
-}
-
-// append_triangle writes one colored triangle sampling the atlas white texel, so it
-// shares the batch with everything else. The caller closes the command.
-@(private="file")
-append_triangle :: proc(List: ^DrawList, A, B, C: PathPoint, UV: Vec2) {
-	vtx := u32(len(List.vertices))
-
-	append(&List.vertices, Vertex{Pos = A.pos, UV = UV, Color = A.col})
-	append(&List.vertices, Vertex{Pos = B.pos, UV = UV, Color = B.col})
-	append(&List.vertices, Vertex{Pos = C.pos, UV = UV, Color = C.col})
-
-	append(&List.indices, vtx + 0)
-	append(&List.indices, vtx + 1)
-	append(&List.indices, vtx + 2)
-}
-
-// append_band writes the two triangles of one quad from the four corners in order, so
-// a stroke edge costs four vertices instead of six.
-@(private="file")
-append_band :: proc(List: ^DrawList, A, B, C, D: PathPoint, UV: Vec2) {
-	vtx := u32(len(List.vertices))
-
-	append(&List.vertices, Vertex{Pos = A.pos, UV = UV, Color = A.col})
-	append(&List.vertices, Vertex{Pos = B.pos, UV = UV, Color = B.col})
-	append(&List.vertices, Vertex{Pos = C.pos, UV = UV, Color = C.col})
-	append(&List.vertices, Vertex{Pos = D.pos, UV = UV, Color = D.col})
-
-	append(&List.indices, vtx + 0)
-	append(&List.indices, vtx + 1)
-	append(&List.indices, vtx + 2)
-	append(&List.indices, vtx + 0)
-	append(&List.indices, vtx + 2)
-	append(&List.indices, vtx + 3)
-}
-
-// append_quad writes four vertices and six indices for a textured quad.
-@(private="file")
-append_quad :: proc(List: ^DrawList, X0, Y0, X1, Y1: f32, UV0, UV1: Vec2, Tint: Color) {
-	vtx := u32(len(List.vertices))
-
-	append(&List.vertices, Vertex{Pos = {X0, Y0}, UV = {UV0.x, UV0.y}, Color = Tint})
-	append(&List.vertices, Vertex{Pos = {X1, Y0}, UV = {UV1.x, UV0.y}, Color = Tint})
-	append(&List.vertices, Vertex{Pos = {X1, Y1}, UV = {UV1.x, UV1.y}, Color = Tint})
-	append(&List.vertices, Vertex{Pos = {X0, Y1}, UV = {UV0.x, UV1.y}, Color = Tint})
-
-	append(&List.indices, vtx + 0)
-	append(&List.indices, vtx + 1)
-	append(&List.indices, vtx + 2)
-	append(&List.indices, vtx + 0)
-	append(&List.indices, vtx + 2)
-	append(&List.indices, vtx + 3)
-
-	mesh_command(List, 6)
-}
-
-// path_clear drops the points accumulated so far.
-@(private="file")
-path_clear :: proc(List: ^DrawList) {
-	clear(&List.path)
-}
-
-// path_line_to appends `P` to the path, carrying `Tint`.
-@(private="file")
-path_line_to :: proc(List: ^DrawList, P: Vec2, Tint: Color) {
-	append(&List.path, PathPoint{pos = P, col = Tint})
-}
-
-// path_arc_to appends the points of the arc around `Center`, from `A0` to `A1`
-// radians. `Segments` of zero picks a count from the radius and the sweep.
-@(private="file")
-path_arc_to :: proc(List: ^DrawList, Center: Vec2, Radius: f32, A0, A1: f32, Tint: Color, Segments: int = 0) {
-	if Radius <= 0 do return
-
-	n := Segments
-	if n <= 0 {
-		per_turn := clamp(int(Radius) + 8, 12, 96)
-		n = clamp(int(f32(per_turn) * abs(A1 - A0) / (2 * math.PI)), 2, 96)
-	}
-
-	for i in 0 ..= n {
-		angle := A0 + (A1 - A0) * f32(i) / f32(n)
-		path_line_to(List, {Center.x + math.cos(angle) * Radius, Center.y + math.sin(angle) * Radius}, Tint)
-	}
-}
-
-// path_corner appends an arc when the corner rounds, or the corner point itself
-// when it does not.
-@(private="file")
-path_corner :: proc(List: ^DrawList, Center, Corner: Vec2, Radius: f32, A0, A1: f32, Tint: Color) {
-	if Radius > 0 {
-		path_arc_to(List, Center, Radius, A0, A1, Tint)
-	} else {
-		path_line_to(List, Corner, Tint)
-	}
-}
-
-// path_rect appends a rectangle, rounding each corner by its own radius.
-@(private="file")
-path_rect :: proc(List: ^DrawList, Rect: Rect, CornerRadius: CornerRadius, Tint: Color) {
-	limit := min(Rect.w, Rect.h) / 2
-	tl := clamp(CornerRadius.TopLeft, 0, limit)
-	tr := clamp(CornerRadius.TopRight, 0, limit)
-	br := clamp(CornerRadius.BottomRight, 0, limit)
-	bl := clamp(CornerRadius.BottomLeft, 0, limit)
-
-	x0, y0 := Rect.x, Rect.y
-	x1, y1 := Rect.x + Rect.w, Rect.y + Rect.h
-	half_pi: f32 = math.PI / 2
-
-	path_corner(List, {x0 + tl, y0 + tl}, {x0, y0}, tl, half_pi * 2, half_pi * 3, Tint)
-	path_corner(List, {x1 - tr, y0 + tr}, {x1, y0}, tr, half_pi * 3, half_pi * 4, Tint)
-	path_corner(List, {x1 - br, y1 - br}, {x1, y1}, br, 0, half_pi, Tint)
-	path_corner(List, {x0 + bl, y1 - bl}, {x0, y1}, bl, half_pi, half_pi * 2, Tint)
-}
-
-// path_fill_convex fills the path as a fan from its first point, then clears it. The
-// path must be convex.
-@(private="file")
-path_fill_convex :: proc(List: ^DrawList) {
-	n := len(List.path)
-	if n >= 3 {
-		uv := use_atlas(List)
-		start := len(List.indices)
-		vtx := u32(len(List.vertices))
-
-		for p in List.path do append(&List.vertices, Vertex{Pos = p.pos, UV = uv, Color = p.col})
-		for i in 1 ..< n - 1 {
-			append(&List.indices, vtx)
-			append(&List.indices, vtx + u32(i))
-			append(&List.indices, vtx + u32(i + 1))
-		}
-
-		mesh_command(List, u32(len(List.indices) - start))
-	}
-	path_clear(List)
-}
-
-// path_stroke traces the path as a band `Thickness` wide, then clears it.
-@(private="file")
-path_stroke :: proc(List: ^DrawList, Tint: Color, Thickness: f32 = 1, Closed: bool = true) {
-	n := len(List.path)
-	if n < 2 || Thickness <= 0 {
-		path_clear(List)
-		return
-	}
-
-	uv := use_atlas(List)
-	half := Thickness / 2
-	edges := n if Closed else n - 1
-	start := len(List.indices)
-
-	for i in 0 ..< edges {
-		a := List.path[i]
-		b := List.path[(i + 1) % n]
-
-		d := b.pos - a.pos
-		length := math.sqrt(d.x * d.x + d.y * d.y)
-		if length <= 0 do continue
-
-		if Closed || i > 0 {
-			prev := List.path[(i - 1 + n) % n]
-			add_bevel(List, prev, a, b, half, Tint, uv)
-		}
-
-		normal := Vec2{-d.y / length * half, d.x / length * half}
-		append_band(
-			List,
-			{a.pos + normal, Tint},
-			{b.pos + normal, Tint},
-			{b.pos - normal, Tint},
-			{a.pos - normal, Tint},
-			uv,
-		)
-	}
-
-	if count := len(List.indices) - start; count > 0 do mesh_command(List, u32(count))
-	path_clear(List)
-}
-
-// add_bevel fills the outer wedge at `At` between the edges into `At` and out of
-// `At`. It is the cheapest join and leaves a flat corner.
-@(private="file")
-add_bevel :: proc(List: ^DrawList, Prev, At, Next: PathPoint, Half: f32, Tint: Color, UV: Vec2) {
-	din := At.pos - Prev.pos
-	dout := Next.pos - At.pos
-	din_len := math.sqrt(din.x * din.x + din.y * din.y)
-	dout_len := math.sqrt(dout.x * dout.x + dout.y * dout.y)
-	if din_len <= 0 || dout_len <= 0 do return
-
-	cross := din.x * dout.y - din.y * dout.x
-	if cross == 0 do return
-
-	din_n := Vec2{-din.y, din.x} / din_len * Half
-	dout_n := Vec2{-dout.y, dout.x} / dout_len * Half
-	side: f32 = 1
-	if cross > 0 do side = -1
-
-	append_triangle(
-		List,
-		{At.pos + din_n * side, Tint},
-		{At.pos + dout_n * side, Tint},
-		{At.pos, Tint},
-		UV,
-	)
-}
-
-@(private="file")
-MAX_POLYGON_SIDES :: 64
-
-// regular_polygon_points fills `out` with the vertices of a regular polygon, one
-// every `2 * math.PI / len(out)` radians from `Start`.
-@(private="file")
-regular_polygon_points :: proc(out: []Vec2, Center: Vec2, Radius: f32, Start: f32) {
-	step := 2 * math.PI / f32(len(out))
-	for _, i in out {
-		angle := Start + f32(i) * step
-		out[i] = {Center.x + math.cos(angle) * Radius, Center.y + math.sin(angle) * Radius}
-	}
-}
-
-// regular_polygon fills `out` with a regular polygon of `Sides` sides and returns
-// the slice it filled. It returns nothing when `Sides` is below three.
-@(private="file")
-regular_polygon :: proc(out: []Vec2, Sides: int, Center: Vec2, Radius: f32, Start: f32) -> []Vec2 {
-	if Sides < 3 do return nil
-	assert(Sides <= MAX_POLYGON_SIDES, "regular polygon: too many sides")
-
-	n := min(Sides, MAX_POLYGON_SIDES)
-	regular_polygon_points(out[:n], Center, Radius, Start)
-	return out[:n]
-}
-
-// lerp_color mixes `A` and `B` by `T`, clamped to 0..1.
-@(private="file")
-lerp_color :: #force_inline proc "contextless" (A, B: Color, T: f32) -> Color {
-	t := clamp(T, 0, 1)
-	return {
-		u8(f32(A.r) + (f32(B.r) - f32(A.r)) * t),
-		u8(f32(A.g) + (f32(B.g) - f32(A.g)) * t),
-		u8(f32(A.b) + (f32(B.b) - f32(A.b)) * t),
-		u8(f32(A.a) + (f32(B.a) - f32(A.a)) * t),
-	}
-}
-
-// gradient_at returns the bilinear mix of the four corner colors at `P` inside
-// `Rect`.
-@(private="file")
-gradient_at :: proc(P: Vec2, Rect: Rect, TopLeft, TopRight, BottomRight, BottomLeft: Color) -> Color {
-	u: f32 = 0
-	v: f32 = 0
-	if Rect.w != 0 do u = (P.x - Rect.x) / Rect.w
-	if Rect.h != 0 do v = (P.y - Rect.y) / Rect.h
-
-	return lerp_color(lerp_color(TopLeft, TopRight, u), lerp_color(BottomLeft, BottomRight, u), v)
-}
-
 // draw_begin_frame clears the list and resets its clip and texture.
 @(private)
 draw_begin_frame :: proc() {
@@ -548,9 +155,9 @@ draw_build :: proc() {
 	draw_node(0)
 }
 
-// fit_image returns the rect and the UV range an image draws with inside `Target`.
-// Stretch uses the whole target, Contain centers the source inside it, and Cover
-// crops the source to the target's aspect ratio.
+// fit_image returns the rect and the UV range an image draws with inside `Target`. Stretch
+// uses the whole target, Contain centers the source inside it, and Cover crops the source
+// to the target's aspect ratio.
 @(private="file")
 fit_image :: proc(Target: Rect, Source: Vec2, Fit: ImageFit) -> (rect: Rect, uv0, uv1: Vec2) {
 	size := Vec2{Target.w, Target.h}
@@ -574,19 +181,18 @@ fit_image :: proc(Target: Rect, Source: Vec2, Fit: ImageFit) -> (rect: Rect, uv0
 	return {at.x, at.y, drawn.x, drawn.y}, uv0, uv1
 }
 
-// draw_node emits node i and then its subtree. A node that clips pushes its inner
-// rect before its content and children, so everything inside is cut to it, nesting
-// as deep as the tree asks.
+// draw_node emits node i and then its subtree. A node that clips pushes its inner rect
+// before its content and children, so everything inside is cut to it.
 @(private="file")
 draw_node :: proc(i: u32) #no_bounds_check {
 	n := &state.nodes[i]
 
-	// One test decides whether this element paints at all. The border is centered on
-	// the edge, so half of it sits outside the rect.
+	// One test decides whether the element paints at all. The border is centered on the
+	// edge, so half of it sits outside the rect.
 	bw := n.style.Border.Width / 2
 	visible := RectOverlaps({n.rect.x - bw, n.rect.y - bw, n.rect.w + bw * 2, n.rect.h + bw * 2}, list.clip)
 	corners := n.style.CornerRadius
-	
+
 	if visible {
 		if n.style.Background.a != 0 {
 			AddRectFilled(&list, n.rect, n.style.Background, corners)
@@ -630,11 +236,7 @@ draw_node :: proc(i: u32) #no_bounds_check {
 		inner := inner_rect(i, n.rect)
 		if !RectOverlaps(inner, list.clip) do break
 
-		rect, uv0, uv1 := fit_image(
-			inner,
-			{content.handle.Width, content.handle.Height},
-			content.config.Fit,
-		)
+		rect, uv0, uv1 := fit_image(inner, {content.handle.Width, content.handle.Height}, content.config.Fit)
 		AddImage(&list, rect, content.handle, content.config.Tint, uv0, uv1)
 	}
 
@@ -648,9 +250,8 @@ draw_node :: proc(i: u32) #no_bounds_check {
 	if n.strips != {} && visible do draw_scrollbar(i)
 }
 
-// draw_scrollbar draws the bar of node i on every axis that has one, with the same
-// geometry the drag uses, and after the clip is popped so its own container never
-// cuts it.
+// draw_scrollbar draws the bar of node i on every axis that has one, with the same geometry
+// the drag uses, and after the clip is popped so its own container never cuts it.
 @(private="file")
 draw_scrollbar :: proc(i: u32) #no_bounds_check {
 	TRACK :: Color{255, 255, 255, 30}
