@@ -171,7 +171,7 @@ scrollbar_update :: proc() {
 					axis = axis,
 					grab = (pos.y - bar.thumb.y) if axis == .Vertical else (pos.x - bar.thumb.x),
 				}
-				state.hover_id = n.id
+				set_hover(u32(i))
 				state.press_id = n.id
 				return
 			}
@@ -186,10 +186,9 @@ scrollbar_update :: proc() {
 		return
 	}
 
-	state.hover_id = state.drag.id
-
 	#reverse for &n, i in state.nodes {
 		if n.id != state.drag.id do continue
+		set_hover(u32(i))
 
 		bar, ok := scrollbar(u32(i), state.drag.axis)
 		if !ok do return

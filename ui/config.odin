@@ -58,8 +58,17 @@ Style :: struct {
 	BorderWidth:  Edges,
 }
 
-// LayoutConfig is how an element is sized and how it places its children. A container with
-// `Hit` claims every hit inside its rect, padding included.
+// HitMode is how an element answers the pointer. `Ignore` hides it and its subtree, `Pass`
+// observes but never owns, `Stop` owns the whole box, and `Auto` owns when no `Stop` is above.
+HitMode :: enum u8 {
+	Auto,
+	Stop,
+	Pass,
+	Ignore,
+}
+
+// LayoutConfig is how an element is sized, how it places its children and how it answers the
+// pointer. `Hit` decides whether the element is seen, observes or owns the press.
 LayoutConfig :: struct {
 	Width:   Sizing,
 	Height:  Sizing,
@@ -69,7 +78,7 @@ LayoutConfig :: struct {
 	Align:   Align,
 	Clip:    bool,
 	Scroll:  Scroll,
-	Hit:     bool,
+	Hit:     HitMode,
 }
 
 // WrapMode is how a label breaks its text. Both modes break at the newlines the text has;

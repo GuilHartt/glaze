@@ -15,7 +15,7 @@ Begin :: proc() {
 	}
 	append(&state.scopes, Scope{id = ROOT_SEED, node = NO_NODE})
 	size := viewport_size()
-	Open({Width = Fixed(size.x), Height = Fixed(size.y)}, {}, .Column)
+	Open({Width = Fixed(size.x), Height = Fixed(size.y), Hit = .Pass}, {}, .Column)
 }
 
 // End finishes the frame: closes the implicit root, lays the tree out and builds the draw
@@ -94,11 +94,13 @@ Column :: proc(Config: LayoutConfig = {}, Style: Style = {}) -> bool {
 }
 
 // Label adds a text leaf and returns its id, so it can be the target of Hovered/Clicked. `Color`
-// and `Size` stay loose since a zero color is a real value; the rest size and paint the leaf.
+// and `Size` stay loose since a zero color is a real value; `Width`, `Height` and `Hit` describe
+// the box, and the rest paints it.
 Label :: proc(
 	Text:   cstring,
 	Width:  Sizing = {},
 	Height: Sizing = {},
+	Hit:    HitMode = .Auto,
 	Color:  Color = {255, 255, 255, 255},
 	Size:   f32 = 16,
 	Font:   Font = 0,
@@ -106,7 +108,7 @@ Label :: proc(
 	Align:  TextAlign = .Left,
 	Style:  Style = {},
 ) -> Id #no_bounds_check {
-	node_id := Open({Width = Width, Height = Height}, Style)
+	node_id := Open({Width = Width, Height = Height, Hit = Hit}, Style)
 	state.nodes[len(state.nodes)-1].content = TextContent{
 		text  = Text,
 		font  = Font,
@@ -119,17 +121,19 @@ Label :: proc(
 	return node_id
 }
 
-// Image adds an image leaf and returns its id. `Width` and `Height` size the leaf, defaulting
-// to the texture size, `Fit` is how the texture fills the rect, and `Style` paints the box.
+// Image adds an image leaf and returns its id. `Width` and `Height` default to the texture
+// size, `Hit` is how the leaf answers the pointer, `Fit` how the texture fills the rect, and
+// `Style` paints the box.
 Image :: proc(
 	Handle: Texture,
 	Width:  Sizing = {},
 	Height: Sizing = {},
+	Hit:    HitMode = .Auto,
 	Tint:   Color = {255, 255, 255, 255},
 	Fit:    ImageFit = .Stretch,
 	Style:  Style = {},
 ) -> Id #no_bounds_check {
-	node_id := Open({Width = Width, Height = Height}, Style)
+	node_id := Open({Width = Width, Height = Height, Hit = Hit}, Style)
 	state.nodes[len(state.nodes)-1].content = ImageContent{
 		handle = Handle,
 		config = ImageConfig{Tint = Tint, Fit = Fit},
@@ -139,14 +143,16 @@ Image :: proc(
 }
 
 // Paint adds a sized leaf whose painting is `Fn` and returns its id, so it needs no Row or
-// Column around it. The callback draws inside the rect and emits only shapes.
+// Column around it. `Hit` is how it answers the pointer, and the callback draws inside the rect
+// and emits only shapes.
 Paint :: proc(
 	Fn:     PaintProc,
 	Width:  Sizing = {Kind = .Fixed, Grow = 1},
 	Height: Sizing = {Kind = .Fixed, Grow = 1},
+	Hit:    HitMode = .Auto,
 	Style:  Style = {},
 ) -> Id #no_bounds_check {
-	node_id := Open({Width = Width, Height = Height}, Style)
+	node_id := Open({Width = Width, Height = Height, Hit = Hit}, Style)
 	state.nodes[len(state.nodes) - 1].content = Fn
 	Close()
 	return node_id

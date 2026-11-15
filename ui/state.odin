@@ -85,16 +85,16 @@ Screen :: struct {
 }
 
 State :: struct {
-	screen:   Screen,
-	tick:     u32,
-	hover_id: Id,
-	press_id: Id,
-	click_id: Id,
-	drag:     ScrollDrag,
-	storage:  map[StorageKey]rawptr,
-	nodes:    [dynamic]Node,
-	scopes:   [dynamic]Scope,
-	flexes:   [dynamic]Flex,
+	screen:    Screen,
+	tick:      u32,
+	hover_ids: [dynamic]Id,
+	press_id:  Id,
+	click_id:  Id,
+	drag:      ScrollDrag,
+	storage:   map[StorageKey]rawptr,
+	nodes:     [dynamic]Node,
+	scopes:    [dynamic]Scope,
+	flexes:    [dynamic]Flex,
 }
 
 @(private)
