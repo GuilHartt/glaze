@@ -402,8 +402,11 @@ arrange :: proc(i: u32) #no_bounds_check {
 	}
 	if i + 1 >= n.subtree_end do return
 
-	// The node is rebuilt every tick, so the answer Auto needs has to survive outside it.
-	Storage(n.id, bit_set[ScrollAxis])^ = strips(n, n.content_size)
+	// The node is rebuilt every tick, so the answer Auto needs has to survive outside it, and
+	// only Auto reads it back.
+	if scroll_mode(n, .Vertical) == .Auto || scroll_mode(n, .Horizontal) == .Auto {
+		Storage(n.id, bit_set[ScrollAxis])^ = strips(n, n.content_size)
+	}
 	arrange_children(i, inner_rect(i, n.rect))
 }
 
