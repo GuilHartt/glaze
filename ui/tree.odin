@@ -131,15 +131,17 @@ Float :: struct {
 	node:   u32,
 	anchor: Anchor,
 	offset: Vec2,
+	pivot:  Vec2,
 }
 
 // Floating opens a node out of the flow at `Offset` from `Anchor`, painted and hit above the
-// tree. The block is its scope, like Row and Column, and `LastId` is its id. It sizes itself,
-// so `Fill` and `Grow` collapse to zero.
+// tree. `Pivot` picks the point of the float that lands on the anchor, and the rect is clamped
+// to the viewport. The block is its scope, and `LastId` is its id.
 @(require_results, deferred_none = Close)
 Floating :: proc(
 	Anchor:    Anchor = AnchorKind.Parent,
 	Offset:    Vec2 = {},
+	Pivot:     Vec2 = {},
 	Config:    LayoutConfig = {},
 	Style:     Style = {},
 	Direction: Direction = .Column,
@@ -150,6 +152,7 @@ Floating :: proc(
 		node   = u32(len(state.nodes) - 1),
 		anchor = Anchor,
 		offset = Offset,
+		pivot  = Pivot,
 	})
 	return true
 }

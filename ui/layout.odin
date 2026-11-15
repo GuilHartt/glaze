@@ -477,6 +477,7 @@ arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 // declaration order, so a later float sits above an earlier one and may anchor inside it.
 @(private)
 place_floats :: proc() #no_bounds_check {
+	viewport := viewport_size()
 	for &f in state.floats {
 		n := &state.nodes[f.node]
 
@@ -503,8 +504,10 @@ place_floats :: proc() #no_bounds_check {
 			}
 		}
 
-		n.rect.x = origin.x + f.offset.x
-		n.rect.y = origin.y + f.offset.y
+		extent := Vec2{n.rect.w, n.rect.h}
+		at := origin + f.offset - f.pivot * extent
+		n.rect.x = clamp(at.x, 0, max(viewport.x - extent.x, 0))
+		n.rect.y = clamp(at.y, 0, max(viewport.y - extent.y, 0))
 		arrange(f.node)
 	}
 }
