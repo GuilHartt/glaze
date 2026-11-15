@@ -15,6 +15,9 @@ Setup :: proc() {
 		for key in ui.Key {
 			assert(KEY_MAP[key] != .KEY_NULL, "raylib_backend: every ui.Key needs an entry in KEY_MAP")
 		}
+		for icon in ui.CursorIcon {
+			assert(CURSOR_MAP[icon] != .DEFAULT, "raylib_backend: every ui.CursorIcon needs an entry in CURSOR_MAP")
+		}
 	}
 	ui.BindClipboard(clipboard_get, clipboard_set)
 	sync_atlas()
@@ -96,9 +99,10 @@ sync_atlas :: proc() {
 	}
 }
 
-// Render draws the commands produced by the last frame. Call it once per frame,
-// after ui.End.
+// Render draws the commands produced by the last frame and applies the requested cursor.
+// Call it once per frame, after ui.End.
 Render :: proc() {
+	rl.SetMouseCursor(CURSOR_MAP[ui.Cursor()])
 	sync_atlas()
 	
 	rlgl.DrawRenderBatchActive()
@@ -230,4 +234,20 @@ KEY_MAP := [ui.Key]rl.KeyboardKey {
 	.KpDecimal = .KP_DECIMAL, .KpDivide = .KP_DIVIDE,
 	.KpMultiply = .KP_MULTIPLY, .KpSubtract = .KP_SUBTRACT,
 	.KpAdd = .KP_ADD, .KpEnter = .KP_ENTER, .KpEqual = .KP_EQUAL,
+}
+
+// CURSOR_MAP maps each engine cursor to the raylib one that draws it. Every ui.CursorIcon
+// needs an entry.
+@(private="file")
+CURSOR_MAP := [ui.CursorIcon]rl.MouseCursor{
+	.Arrow      = .ARROW,
+	.IBeam      = .IBEAM,
+	.Crosshair  = .CROSSHAIR,
+	.Hand       = .POINTING_HAND,
+	.ResizeEW   = .RESIZE_EW,
+	.ResizeNS   = .RESIZE_NS,
+	.ResizeNWSE = .RESIZE_NWSE,
+	.ResizeNESW = .RESIZE_NESW,
+	.ResizeAll  = .RESIZE_ALL,
+	.NotAllowed = .NOT_ALLOWED,
 }

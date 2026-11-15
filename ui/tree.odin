@@ -11,6 +11,7 @@ Begin :: proc() {
 	clear(&state.floats)
 	label_purge()
 	state.tick += 1
+	state.cursor = .Arrow
 	when CHECKS {
 		clear(&seen_ids)
 	}

@@ -91,6 +91,7 @@ State :: struct {
 	press_ids: [MouseButton]Id,
 	click_ids: [MouseButton]Id,
 	drag:      ScrollDrag,
+	cursor:    CursorIcon,
 	storage:   map[StorageKey]rawptr,
 	nodes:     [dynamic]Node,
 	scopes:    [dynamic]Scope,

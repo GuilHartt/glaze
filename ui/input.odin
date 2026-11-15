@@ -30,6 +30,20 @@ Key :: enum u8 {
 	KpDecimal, KpDivide, KpMultiply, KpSubtract, KpAdd, KpEnter, KpEqual,
 }
 
+// CursorIcon is the pointer shape a widget asks for. The backend maps it to its own cursor.
+CursorIcon :: enum u8 {
+	Arrow,
+	IBeam,
+	Crosshair,
+	Hand,
+	ResizeEW,
+	ResizeNS,
+	ResizeNWSE,
+	ResizeNESW,
+	ResizeAll,
+	NotAllowed,
+}
+
 // Input holds the input state for the current frame. The backend fills it through the Add*
 // procedures and widgets read it through the query procedures.
 Input :: struct {
@@ -90,6 +104,17 @@ MouseReleased :: proc(Button: MouseButton) -> bool {
 // MouseWheel returns the accumulated wheel delta for this frame.
 MouseWheel :: proc() -> Vec2 {
 	return input.Wheel
+}
+
+// Cursor returns the cursor requested for this frame, or Arrow when no widget asked for one.
+Cursor :: proc() -> CursorIcon {
+	return state.cursor
+}
+
+// SetCursor asks for `Icon` as the pointer for this frame. The last call wins, and the
+// backend reads it with Cursor after End.
+SetCursor :: proc(Icon: CursorIcon) {
+	state.cursor = Icon
 }
 
 // KeyDown reports whether `Key` is currently held.
