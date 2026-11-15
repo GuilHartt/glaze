@@ -33,6 +33,7 @@ Node :: struct {
 	config:       LayoutConfig,
 	style:        Style,
 	direction:    Direction,
+	floating:     bool,
 	base:         Vec2,
 	content_size: Vec2,
 	strips:       bit_set[ScrollAxis],
@@ -97,6 +98,25 @@ next_sibling :: #force_inline proc(i: u32) -> u32 #no_bounds_check {
 	return state.nodes[i].subtree_end
 }
 
+// node_of returns the node with `Id`, or NO_NODE when the frame has no such element.
+@(private)
+node_of :: proc(id: Id) -> u32 #no_bounds_check {
+	#reverse for &n, i in state.nodes {
+		if n.id == id do return u32(i)
+	}
+	return NO_NODE
+}
+
+// parent_of returns the node whose subtree holds node `i`, which is the element it was
+// declared in.
+@(private)
+parent_of :: proc(i: u32) -> u32 #no_bounds_check {
+	#reverse for &n, j in state.nodes[:i] {
+		if n.subtree_end > i do return u32(j)
+	}
+	return NO_NODE
+}
+
 @(private="file")
 resolve_axis :: proc(s: Sizing, content: f32) -> f32 {
 	v := content
@@ -147,6 +167,7 @@ collect_flex :: proc(i: u32, A: ScrollAxis) -> []Flex #no_bounds_check {
 	clear(&state.flexes)
 	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
 		child := &state.nodes[c]
+		if child.floating do continue
 		s := sizing_of(child.config, A)
 		append(&state.flexes, Flex{
 			node   = c,
@@ -220,6 +241,14 @@ inner_rect :: proc(i: u32, rect: Rect) -> Rect #no_bounds_check {
 	}
 }
 
+// padding_origin returns the top left of node `i` inside its border, the point a floating node
+// measures its offset from.
+@(private)
+padding_origin :: proc(i: u32) -> Vec2 #no_bounds_check {
+	b := state.nodes[i].style.BorderWidth
+	return {state.nodes[i].rect.x + b.Left, state.nodes[i].rect.y + b.Top}
+}
+
 // justify returns the leading offset and the extra gap between children that spread the
 // leftover `free` space along the main axis.
 @(private="file")
@@ -287,6 +316,7 @@ measure_width :: proc(i: u32) #no_bounds_check {
 		count := 0
 		for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
 			measure_width(c)
+			if state.nodes[c].floating do continue
 			w := state.nodes[c].base.x
 			sum += w
 			widest = max(widest, w)
@@ -295,6 +325,7 @@ measure_width :: proc(i: u32) #no_bounds_check {
 		n.content_size.x = sum + gaps(n, count) if n.direction == .Row else widest
 	}
 	n.base.x = resolve_axis(n.config.Width, n.content_size.x + inset(n).x)
+	if n.floating do n.rect.w = n.base.x
 }
 
 // resolve_width fixes the width of node i to the one its parent gave it, then shares the
@@ -317,6 +348,7 @@ resolve_width :: proc(i: u32, Width: f32) #no_bounds_check {
 	} else {
 		for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
 			child := &state.nodes[c]
+			if child.floating do continue
 			child.rect.w = cross_size(n, child, space, .Horizontal)
 		}
 	}
@@ -344,6 +376,7 @@ measure_height :: proc(i: u32) #no_bounds_check {
 		count := 0
 		for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
 			measure_height(c)
+			if state.nodes[c].floating do continue
 			h := state.nodes[c].base.y
 			sum += h
 			tallest = max(tallest, h)
@@ -352,6 +385,7 @@ measure_height :: proc(i: u32) #no_bounds_check {
 		n.content_size.y = sum + gaps(n, count) if n.direction == .Column else tallest
 	}
 	n.base.y = resolve_axis(n.config.Height, n.content_size.y + inset(n).y)
+	if n.floating do n.rect.h = n.base.y
 }
 
 // arrange places node i and its subtree, top-down. Its width and position come from its
@@ -394,6 +428,7 @@ arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 	} else {
 		for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
 			child := &state.nodes[c]
+			if child.floating do continue
 			child.rect.h = cross_size(n, child, space_cross, .Vertical)
 		}
 	}
@@ -401,6 +436,7 @@ arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 	used: f32
 	count := 0
 	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
+		if state.nodes[c].floating do continue
 		used += size_along(state.nodes[c].rect, main)
 		count += 1
 	}
@@ -423,6 +459,7 @@ arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 	cursor := offset
 	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
 		child := &state.nodes[c]
+		if child.floating do continue
 		at: f32
 		#partial switch n.config.Align {
 		case .Center: at = (space_cross - size_along(child.rect, cross)) / 2
@@ -436,9 +473,46 @@ arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 	}
 }
 
+// place_floats positions each floating node against its anchor and arranges its subtree, in
+// declaration order, so a later float sits above an earlier one and may anchor inside it.
+@(private)
+place_floats :: proc() #no_bounds_check {
+	for &f in state.floats {
+		n := &state.nodes[f.node]
+
+		origin: Vec2
+		switch a in f.anchor {
+		case Id:
+			if a != 0 {
+				if i := node_of(a); i != NO_NODE {
+					origin = padding_origin(i)
+				} else {
+					report(fmt.ctprintf("ui: floating anchor %v not found", a))
+				}
+			}
+		case AnchorKind:
+			switch a {
+			case .Parent:
+				if i := parent_of(f.node); i != NO_NODE {
+					origin = padding_origin(i)
+				}
+			case .Root:
+				origin = {}
+			case .Pointer:
+				origin = MousePos()
+			}
+		}
+
+		n.rect.x = origin.x + f.offset.x
+		n.rect.y = origin.y + f.offset.y
+		arrange(f.node)
+	}
+}
+
 // layout runs the passes that size and place the frame, in the order CSS does: intrinsic
 // widths from the inside out, final widths from the outside in, heights from the inside out
-// once the widths are known, and finally positions from the outside in.
+// once the widths are known, and finally positions from the outside in. The floating layer is
+// placed last, so every anchor is already arranged.
 @(private)
 layout :: proc() {
 	size := viewport_size()
@@ -447,4 +521,5 @@ layout :: proc() {
 	measure_height(0)
 	state.nodes[0].rect = Rect{0, 0, size.x, size.y}
 	arrange(0)
+	place_floats()
 }

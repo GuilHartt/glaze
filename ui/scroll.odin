@@ -161,6 +161,7 @@ scrollbar_update :: proc() {
 		state.drag = {}
 		#reverse for &n, i in state.nodes {
 			if n.strips == {} do continue
+			if !Hovered(n.id) do continue
 
 			for axis in ScrollAxis {
 				bar, ok := scrollbar(u32(i), axis)
@@ -186,38 +187,36 @@ scrollbar_update :: proc() {
 		return
 	}
 
-	#reverse for &n, i in state.nodes {
-		if n.id != state.drag.id do continue
-		set_hover(u32(i))
+	i := node_of(state.drag.id)
+	if i == NO_NODE do return
+	set_hover(i)
 
-		bar, ok := scrollbar(u32(i), state.drag.axis)
-		if !ok do return
+	bar, ok := scrollbar(i, state.drag.axis)
+	if !ok do return
 
-		vertical := state.drag.axis == .Vertical
-		travel := (bar.track.h - bar.thumb.h) if vertical else (bar.track.w - bar.thumb.w)
-		reach := bar.span - bar.window
-		if travel <= 0 || reach <= 0 do return
+	vertical := state.drag.axis == .Vertical
+	travel := (bar.track.h - bar.thumb.h) if vertical else (bar.track.w - bar.thumb.w)
+	reach := bar.span - bar.window
+	if travel <= 0 || reach <= 0 do return
 
-		at := clamp(
-			(pos.y - bar.track.y - state.drag.grab) if vertical else (pos.x - bar.track.x - state.drag.grab),
-			0,
-			travel,
-		)
+	at := clamp(
+		(pos.y - bar.track.y - state.drag.grab) if vertical else (pos.x - bar.track.x - state.drag.grab),
+		0,
+		travel,
+	)
 
-		offset := ScrollOffset(state.drag.id)
-		if vertical {
-			offset.y = at / travel * reach
-		} else {
-			offset.x = at / travel * reach
-		}
-		SetScroll(offset, state.drag.id)
-		return
+	offset := ScrollOffset(state.drag.id)
+	if vertical {
+		offset.y = at / travel * reach
+	} else {
+		offset.x = at / travel * reach
 	}
+	SetScroll(offset, state.drag.id)
 }
 
-// scroll_update turns the wheel into scroll for the innermost container under the
-// pointer. It reads the rects of the previous frame, walking the nodes backwards so
-// the last match is the deepest one.
+// scroll_update turns the wheel into scroll for the innermost container under the pointer. It
+// walks the nodes backwards so the last match is the deepest one, and only takes nodes in the
+// hover chain, so a container under a floating layer does not scroll.
 @(private)
 scroll_update :: proc() {
 	wheel := MouseWheel()
@@ -229,6 +228,7 @@ scroll_update :: proc() {
 	pos := MousePos()
 	#reverse for &n in state.nodes {
 		if !scrolls(&n, .Vertical) && !scrolls(&n, .Horizontal) do continue
+		if !Hovered(n.id) do continue
 		if !pointer_on(&n, pos) do continue
 
 		s := ScrollOffset(n.id)

@@ -12,8 +12,7 @@ feeds events in and draws commands out, so the engine does not care which one is
 in use. A raylib backend is included as the first of them.
 
 > **Status: pre-1.0.** The API is still moving and a minor version may break it.
-> The intent is to freeze the public surface at 1.0. Clipping, scrolling, text
-> input and overlays are not implemented yet.
+> The intent is to freeze the public surface at 1.0.
 
 ## How a frame works
 

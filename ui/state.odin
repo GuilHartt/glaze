@@ -94,6 +94,7 @@ State :: struct {
 	storage:   map[StorageKey]rawptr,
 	nodes:     [dynamic]Node,
 	scopes:    [dynamic]Scope,
+	floats:    [dynamic]Float,
 	flexes:    [dynamic]Flex,
 }
 

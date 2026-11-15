@@ -8,6 +8,7 @@ Begin :: proc() {
 	scroll_update()
 	clear(&state.nodes)
 	clear(&state.scopes)
+	clear(&state.floats)
 	label_purge()
 	state.tick += 1
 	when CHECKS {
@@ -90,6 +91,50 @@ Row :: proc(Config: LayoutConfig = {}, Style: Style = {}) -> bool {
 @(require_results, deferred_none = Close)
 Column :: proc(Config: LayoutConfig = {}, Style: Style = {}) -> bool {
 	Open(Config, Style, .Column)
+	return true
+}
+
+// AnchorKind is an anchor that carries no element id: the element the floating node was
+// declared in, the viewport, or the pointer.
+AnchorKind :: enum u8 {
+	Parent,
+	Root,
+	Pointer,
+}
+
+// Anchor is what a floating node is placed against: an element id, or an `AnchorKind` for the
+// element it was declared in, the viewport, or the pointer.
+Anchor :: union {
+	Id,
+	AnchorKind,
+}
+
+// Float is one element out of the flow: the node it opened and where it is placed.
+@(private)
+Float :: struct {
+	node:   u32,
+	anchor: Anchor,
+	offset: Vec2,
+}
+
+// Floating opens a node out of the flow at `Offset` from `Anchor`, painted and hit above the
+// tree. The block is its scope, like Row and Column. It sizes itself, so `Fill` and `Grow`
+// collapse to zero.
+@(require_results, deferred_none = Close)
+Floating :: proc(
+	Anchor:    Anchor = AnchorKind.Parent,
+	Offset:    Vec2 = {},
+	Config:    LayoutConfig = {},
+	Style:     Style = {},
+	Direction: Direction = .Column,
+) -> bool #no_bounds_check {
+	Open(Config, Style, Direction)
+	state.nodes[len(state.nodes) - 1].floating = true
+	append(&state.floats, Float{
+		node   = u32(len(state.nodes) - 1),
+		anchor = Anchor,
+		offset = Offset,
+	})
 	return true
 }
 

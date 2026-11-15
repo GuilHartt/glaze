@@ -37,26 +37,43 @@ pointer_on :: #force_inline proc "contextless" (N: ^Node, Pos: Vec2) -> bool {
 	return RectContains(N.rect, Pos) && RectContains(N.clip, Pos)
 }
 
-// hit_target returns the topmost node under `Pos`, skipping every `Ignore` subtree, or NO_NODE
-// when the pointer is over nothing.
+// topmost_in returns the last node in `Lo`..`Hi` under `Pos`, skipping `Ignore` subtrees and
+// nested floating layers, or NO_NODE when nothing there contains the pointer.
 @(private)
-hit_target :: proc(Pos: Vec2) -> u32 #no_bounds_check {
-	skip: u32
+topmost_in :: proc(Lo, Hi: u32, Pos: Vec2) -> u32 #no_bounds_check {
+	skip := Lo
 	target := NO_NODE
-	for &n, i in state.nodes {
-		if u32(i) < skip do continue
-		if n.config.Hit == .Ignore {
+	for i := Lo; i < Hi; i += 1 {
+		if i < skip do continue
+		n := &state.nodes[i]
+		if n.floating || n.config.Hit == .Ignore {
 			skip = n.subtree_end
 			continue
 		}
-		if pointer_on(&n, Pos) do target = u32(i)
+		if pointer_on(n, Pos) do target = i
 	}
 	return target
 }
 
+// hit_target returns the topmost node under `Pos`. A floating layer that contains the pointer
+// is tested first, in reverse declaration order, and the flow tree is the fallback.
+@(private)
+hit_target :: proc(Pos: Vec2) -> u32 #no_bounds_check {
+	#reverse for &f in state.floats {
+		n := &state.nodes[f.node]
+		if n.config.Hit == .Ignore do continue
+		if !pointer_on(n, Pos) do continue
+		if target := topmost_in(f.node + 1, n.subtree_end, Pos); target != NO_NODE {
+			return target
+		}
+		return f.node
+	}
+	return topmost_in(0, u32(len(state.nodes)), Pos)
+}
+
 // resolve_hover fills `state.hover_ids` with the target and its ancestors, topmost first, and
-// returns the element that owns the press: the nearest `Stop` on that chain, or the nearest
-// element that is not `Pass`.
+// returns the owner: the nearest `Stop` on that chain, or the nearest node that is not `Pass`.
+// A floating layer roots its own chain, so the flow it was declared in stays out.
 @(private)
 resolve_hover :: proc(Target: u32) -> Id #no_bounds_check {
 	clear(&state.hover_ids)
@@ -68,11 +85,14 @@ resolve_hover :: proc(Target: u32) -> Id #no_bounds_check {
 	if n.config.Hit == .Stop do stop = n.id
 	if n.config.Hit != .Pass do weak = n.id
 
-	#reverse for &a in state.nodes[:Target] {
-		if a.subtree_end <= Target do continue
-		append(&state.hover_ids, a.id)
-		if stop == 0 && a.config.Hit == .Stop do stop = a.id
-		if weak == 0 && a.config.Hit != .Pass do weak = a.id
+	if !n.floating {
+		#reverse for &a in state.nodes[:Target] {
+			if a.subtree_end <= Target do continue
+			append(&state.hover_ids, a.id)
+			if stop == 0 && a.config.Hit == .Stop do stop = a.id
+			if weak == 0 && a.config.Hit != .Pass do weak = a.id
+			if a.floating do break
+		}
 	}
 
 	return stop if stop != 0 else weak

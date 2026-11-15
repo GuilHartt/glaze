@@ -144,10 +144,12 @@ draw_begin_frame :: proc() {
 	list.texture = {}
 }
 
-// draw_build walks the tree in paint order, starting from the implicit root.
+// draw_build walks the flow tree in paint order, then the floating layer in declaration order,
+// so a floating node paints over everything and the last one sits on top.
 @(private)
 draw_build :: proc() {
 	draw_node(0)
+	for &f in state.floats do draw_node(f.node)
 }
 
 // fit_image returns the rect and the UV range an image draws with inside `Target`. Stretch
@@ -276,6 +278,7 @@ draw_node :: proc(i: u32) #no_bounds_check {
 	}
 
 	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
+		if state.nodes[c].floating do continue
 		draw_node(c)
 	}
 
