@@ -5,7 +5,7 @@ package ui
 @(private)
 target_id :: #force_inline proc(id: Id) -> Id {
 	if id != 0 do return id
-	return state.nodes[len(state.nodes) - 1].id
+	return LastId()
 }
 
 // Hovered reports whether `Id` is under the pointer, either itself or through one of its

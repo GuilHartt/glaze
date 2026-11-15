@@ -61,6 +61,22 @@ Close :: proc() #no_bounds_check {
 	state.nodes[scope.node].subtree_end = u32(len(state.nodes))
 }
 
+// LastId returns the id of the last element declared, leaf or container. The interaction
+// queries take it when no id is passed.
+LastId :: proc() -> Id #no_bounds_check {
+	return state.nodes[len(state.nodes) - 1].id
+}
+
+// SetStyle replaces the style of the element `Id`, which must have been declared this frame.
+// Widgets use it to pick the visual of an interaction state after opening the element.
+SetStyle :: proc(Id: Id, Style: Style) {
+	if i := node_of(Id); i != NO_NODE {
+		state.nodes[i].style = Style
+	} else {
+		report("ui: SetStyle without a matching element")
+	}
+}
+
 // PushId opens a new id scope, so the elements inside derive their ids from a fresh seed
 // instead of the enclosing element. Close it with PopId.
 PushId :: proc() {
@@ -118,8 +134,8 @@ Float :: struct {
 }
 
 // Floating opens a node out of the flow at `Offset` from `Anchor`, painted and hit above the
-// tree. The block is its scope, like Row and Column. It sizes itself, so `Fill` and `Grow`
-// collapse to zero.
+// tree. The block is its scope, like Row and Column, and `LastId` is its id. It sizes itself,
+// so `Fill` and `Grow` collapse to zero.
 @(require_results, deferred_none = Close)
 Floating :: proc(
 	Anchor:    Anchor = AnchorKind.Parent,
