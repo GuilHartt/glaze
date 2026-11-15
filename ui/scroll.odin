@@ -52,6 +52,19 @@ scrolls :: #force_inline proc "contextless" (n: ^Node, Axis: ScrollAxis) -> bool
 	return scroll_mode(n, Axis) != .Disabled
 }
 
+// scroll_limit returns how far node `n` can scroll inside `inner` on each axis, and zero on an
+// axis that does not scroll.
+@(private)
+scroll_limit :: proc(n: ^Node, inner: Rect) -> Vec2 {
+	limit := Vec2{
+		max(n.content_size.x - inner.w, 0),
+		max(n.content_size.y - inner.h, 0),
+	}
+	if !scrolls(n, .Horizontal) do limit.x = 0
+	if !scrolls(n, .Vertical)   do limit.y = 0
+	return limit
+}
+
 // shows_bar reports whether the bar of `Axis` is drawn. Auto and Reserve measure the content
 // against the box the node was given, which the arrangement has already set.
 @(private)
@@ -214,9 +227,9 @@ scrollbar_update :: proc() {
 	SetScroll(offset, state.drag.id)
 }
 
-// scroll_update turns the wheel into scroll for the innermost container under the pointer. It
-// walks the nodes backwards so the last match is the deepest one, and only takes nodes in the
-// hover chain, so a container under a floating layer does not scroll.
+// scroll_update turns the wheel into scroll for the containers under the pointer, from the
+// deepest up, until the delta is used up. Only nodes in the hover chain take it, so a container
+// under a floating layer does not scroll, and a list at its end hands the rest to its parent.
 @(private)
 scroll_update :: proc() {
 	wheel := MouseWheel()
@@ -225,16 +238,24 @@ scroll_update :: proc() {
 	// One wheel notch scrolls this many pixels.
 	STEP :: 40
 
+	remaining := wheel * STEP
 	pos := MousePos()
-	#reverse for &n in state.nodes {
+	#reverse for &n, i in state.nodes {
+		if remaining == 0 do break
 		if !scrolls(&n, .Vertical) && !scrolls(&n, .Horizontal) do continue
 		if !Hovered(n.id) do continue
 		if !pointer_on(&n, pos) do continue
 
-		s := ScrollOffset(n.id)
-		if scrolls(&n, .Vertical)   do s.y -= wheel.y * STEP
-		if scrolls(&n, .Horizontal) do s.x -= wheel.x * STEP
-		SetScroll(s, n.id)
-		break
+		offset := ScrollOffset(n.id)
+		limit := scroll_limit(&n, inner_rect(u32(i), n.rect))
+		next := offset
+		if scrolls(&n, .Vertical) {
+			next.y = clamp(offset.y - remaining.y, 0, limit.y)
+		}
+		if scrolls(&n, .Horizontal) {
+			next.x = clamp(offset.x - remaining.x, 0, limit.x)
+		}
+		remaining -= offset - next
+		SetScroll(next, n.id)
 	}
 }

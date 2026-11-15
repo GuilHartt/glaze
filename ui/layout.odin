@@ -450,11 +450,10 @@ arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 	scroll: Vec2
 	if scrolls(n, .Vertical) || scrolls(n, .Horizontal) {
 		scroll = ScrollOffset(n.id)
-		if !scrolls(n, .Horizontal) do scroll.x = 0
-		if !scrolls(n, .Vertical)   do scroll.y = 0
+		limit := scroll_limit(n, inner)
 		scroll = {
-			clamp(scroll.x, 0, max(n.content_size.x - inner.w, 0)),
-			clamp(scroll.y, 0, max(n.content_size.y - inner.h, 0)),
+			clamp(scroll.x, 0, limit.x),
+			clamp(scroll.y, 0, limit.y),
 		}
 		SetScroll(scroll, n.id)
 	}
