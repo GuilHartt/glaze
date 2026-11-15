@@ -18,16 +18,16 @@ Hovered :: proc(Id: Id = 0) -> bool {
 	return false
 }
 
-// Pressed reports whether `Id` took the press and has not been released, even when the pointer
+// Pressed reports whether `Id` took `Button` and has not been released, even when the pointer
 // has moved away. An `Id` of 0 targets the last element declared.
-Pressed :: proc(Id: Id = 0) -> bool {
-	return state.press_id != 0 && target_id(Id) == state.press_id
+Pressed :: proc(Id: Id = 0, Button: MouseButton = .Left) -> bool {
+	return state.press_ids[Button] != 0 && target_id(Id) == state.press_ids[Button]
 }
 
-// Clicked reports whether `Id` was pressed and released in the same place this tick. An `Id`
-// of 0 targets the last element declared.
-Clicked :: proc(Id: Id = 0) -> bool {
-	return state.click_id != 0 && target_id(Id) == state.click_id
+// Clicked reports whether `Id` was pressed and released in the same place this tick with
+// `Button`. An `Id` of 0 targets the last element declared.
+Clicked :: proc(Id: Id = 0, Button: MouseButton = .Left) -> bool {
+	return state.click_ids[Button] != 0 && target_id(Id) == state.click_ids[Button]
 }
 
 // pointer_on reports whether the pointer is over `N`: inside its rect and inside the clip it
@@ -107,23 +107,25 @@ set_hover :: proc(i: u32) #no_bounds_check {
 }
 
 // interaction_begin turns the pointer and the button edges into the hover chain and the press
-// owner. The chain is the element under the pointer and its ancestors, so a container knows the
-// pointer is inside it; the owner is the one element that answers for a press.
+// owner of each button. The chain is the element under the pointer and its ancestors, so a
+// container knows the pointer is inside it; the owner answers for a press.
 @(private)
 interaction_begin :: proc() #no_bounds_check {
 	owner := resolve_hover(hit_target(MousePos()))
 
-	if MousePressed(.Left) {
-		state.press_id = owner
-	}
-
-	state.click_id = 0
-	if MouseReleased(.Left) {
-		pressed := state.press_id
-		if pressed != 0 && pressed == owner {
-			state.click_id = pressed
+	for button in MouseButton {
+		if MousePressed(button) {
+			state.press_ids[button] = owner
 		}
-		state.press_id = 0
+
+		state.click_ids[button] = 0
+		if MouseReleased(button) {
+			pressed := state.press_ids[button]
+			if pressed != 0 && pressed == owner {
+				state.click_ids[button] = pressed
+			}
+			state.press_ids[button] = 0
+		}
 	}
 }
 

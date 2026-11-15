@@ -173,7 +173,7 @@ scrollbar_update :: proc() {
 					grab = (pos.y - bar.thumb.y) if axis == .Vertical else (pos.x - bar.thumb.x),
 				}
 				set_hover(u32(i))
-				state.press_id = n.id
+				state.press_ids[.Left] = n.id
 				return
 			}
 		}
