@@ -90,6 +90,7 @@ State :: struct {
 	hover_ids: [dynamic]Id,
 	press_ids: [MouseButton]Id,
 	click_ids: [MouseButton]Id,
+	focus_id:  Id,
 	drag:      ScrollDrag,
 	cursor:    CursorIcon,
 	storage:   map[StorageKey]rawptr,

@@ -68,17 +68,19 @@ HitMode :: enum u8 {
 }
 
 // LayoutConfig is how an element is sized, how it places its children and how it answers the
-// pointer. `Hit` decides whether the element is seen, observes or owns the press.
+// pointer and the keyboard. `Hit` decides whether the element is seen, observes or owns the
+// press; `Focusable` lets Tab and a click give it the focus.
 LayoutConfig :: struct {
-	Width:   Sizing,
-	Height:  Sizing,
-	Pad:     Edges,
-	Gap:     f32,
-	Justify: Justify,
-	Align:   Align,
-	Clip:    bool,
-	Scroll:  Scroll,
-	Hit:     HitMode,
+	Width:     Sizing,
+	Height:    Sizing,
+	Pad:       Edges,
+	Gap:       f32,
+	Justify:   Justify,
+	Align:     Align,
+	Clip:      bool,
+	Scroll:    Scroll,
+	Hit:       HitMode,
+	Focusable: bool,
 }
 
 // WrapMode is how a label breaks its text. Both modes break at the newlines the text has;

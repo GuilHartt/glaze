@@ -30,6 +30,18 @@ Clicked :: proc(Id: Id = 0, Button: MouseButton = .Left) -> bool {
 	return state.click_ids[Button] != 0 && target_id(Id) == state.click_ids[Button]
 }
 
+// Focused reports whether `Id` owns the keyboard focus. An `Id` of 0 targets the last element
+// declared.
+Focused :: proc(Id: Id = 0) -> bool {
+	return state.focus_id != 0 && target_id(Id) == state.focus_id
+}
+
+// RequestFocus moves the keyboard focus to `Id`, or clears it when `Id` is 0. Unlike the
+// queries, 0 is not the last element declared.
+RequestFocus :: proc(Id: Id = 0) {
+	state.focus_id = Id
+}
+
 // pointer_on reports whether the pointer is over `N`: inside its rect and inside the clip it
 // was drawn with.
 @(private)
@@ -129,3 +141,46 @@ interaction_begin :: proc() #no_bounds_check {
 	}
 }
 
+// next_focus returns the next focusable element after `Current` in declaration order, or 0
+// when none exists. `Back` walks the order backwards, and the walk wraps around.
+@(private)
+next_focus :: proc(Current: Id, Back: bool) -> Id {
+	count := len(state.nodes)
+	if count == 0 do return 0
+
+	start := count - 1 if Back else 0
+	for &n, i in state.nodes {
+		if n.id == Current {
+			start = i - 1 if Back else i + 1
+			break
+		}
+	}
+
+	step := -1 if Back else 1
+	for _ in 0 ..< count {
+		if start < 0 do start = count - 1
+		if start >= count do start = 0
+		n := &state.nodes[start]
+		if n.config.Focusable do return n.id
+		start += step
+	}
+
+	return 0
+}
+
+// focus_begin takes the focus for a left press on a focusable element, clears it on a press
+// anywhere else, and moves it with Tab. Shift+Tab walks back.
+@(private)
+focus_begin :: proc() {
+	if MousePressed(.Left) {
+		if i := node_of(state.press_ids[.Left]); i != NO_NODE && state.nodes[i].config.Focusable {
+			state.focus_id = state.nodes[i].id
+		} else {
+			state.focus_id = 0
+		}
+	}
+
+	if KeyPressed(.Tab) {
+		state.focus_id = next_focus(state.focus_id, ModifierDown(.Shift))
+	}
+}

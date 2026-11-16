@@ -5,6 +5,7 @@ package ui
 Begin :: proc() {
 	interaction_begin()
 	scrollbar_update()
+	focus_begin()
 	scroll_update()
 	clear(&state.nodes)
 	clear(&state.scopes)
