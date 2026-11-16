@@ -18,16 +18,35 @@ Hovered :: proc(Id: Id = 0) -> bool {
 	return false
 }
 
+// HoveredId returns the element that owns the hover: the nearest `Stop` or non-`Pass` in the
+// chain, or 0 when only pass-through surfaces are under the pointer. Unlike `Hovered`, it
+// needs no id.
+HoveredId :: proc() -> Id {
+	return state.hover_owner
+}
+
 // Pressed reports whether `Id` took `Button` and has not been released, even when the pointer
 // has moved away. An `Id` of 0 targets the last element declared.
 Pressed :: proc(Id: Id = 0, Button: MouseButton = .Left) -> bool {
 	return state.press_ids[Button] != 0 && target_id(Id) == state.press_ids[Button]
 }
 
+// PressedId returns the element that owns `Button`'s press, or 0 when none does. Unlike
+// `Pressed`, it needs no id.
+PressedId :: proc(Button: MouseButton = .Left) -> Id {
+	return state.press_ids[Button]
+}
+
 // Clicked reports whether `Id` was pressed and released in the same place this tick with
 // `Button`. An `Id` of 0 targets the last element declared.
 Clicked :: proc(Id: Id = 0, Button: MouseButton = .Left) -> bool {
 	return state.click_ids[Button] != 0 && target_id(Id) == state.click_ids[Button]
+}
+
+// ClickedId returns the element `Button` clicked this tick, or 0 when no click landed. Unlike
+// `Clicked`, it needs no id.
+ClickedId :: proc(Button: MouseButton = .Left) -> Id {
+	return state.click_ids[Button]
 }
 
 // DoubleClicked reports whether `Id` took two clicks in a row with `Button` this frame. An
@@ -49,10 +68,28 @@ Focused :: proc(Id: Id = 0) -> bool {
 	return state.focus_id != 0 && target_id(Id) == state.focus_id
 }
 
-// RequestFocus moves the keyboard focus to `Id`, or clears it when `Id` is 0. Unlike the
-// queries, 0 is not the last element declared.
+// FocusedId returns the element that owns the keyboard focus, or 0 when none does. Unlike
+// `Focused`, it needs no id.
+FocusedId :: proc() -> Id {
+	return state.focus_id
+}
+
+// RequestFocus moves the keyboard focus to `Id`. An `Id` of 0 targets the last element
+// declared, matching the interaction queries.
 RequestFocus :: proc(Id: Id = 0) {
-	state.focus_id = Id
+	state.focus_id = target_id(Id)
+}
+
+// ClearFocus drops the keyboard focus, so no element owns it.
+ClearFocus :: proc() {
+	state.focus_id = 0
+}
+
+// Activated reports whether `Id` was clicked or, while focused, activated by Enter or Space.
+// It is the one test a button needs. An `Id` of 0 targets the last element declared.
+Activated :: proc(Id: Id = 0, Button: MouseButton = .Left) -> bool {
+	if Clicked(Id, Button) do return true
+	return Focused(Id) && (KeyPressed(.Enter) || KeyPressed(.Space))
 }
 
 // pointer_on reports whether the pointer is over `N`: inside its rect and inside the clip it
@@ -129,6 +166,7 @@ resolve_hover :: proc(Target: u32) -> Id #no_bounds_check {
 set_hover :: proc(i: u32) #no_bounds_check {
 	clear(&state.hover_ids)
 	append(&state.hover_ids, state.nodes[i].id)
+	state.hover_owner = state.nodes[i].id
 }
 
 // Click is the last click of one button: the element it hit, when, where, and how many in a
@@ -171,6 +209,7 @@ record_click :: proc(Button: MouseButton, Id: Id) {
 interaction_begin :: proc() #no_bounds_check {
 	pos := MousePos()
 	owner := resolve_hover(hit_target(pos))
+	state.hover_owner = owner
 
 	for button in MouseButton {
 		if MousePressed(button) {

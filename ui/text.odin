@@ -62,6 +62,15 @@ WrapText :: proc(Text: cstring, Font: Font, Size: f32, Mode: WrapMode, MaxWidth:
 	return lines[:]
 }
 
+// MeasureTextWrapped returns the block size `Text` occupies when wrapped to `Width`, in layout
+// units: the widest line by the stacked line height.
+MeasureTextWrapped :: proc(Text: cstring, Font: Font, Size: f32, Mode: WrapMode, Width: f32) -> Vec2 {
+	broken := WrapText(Text, Font, Size, Mode, Width)
+	widest: f32
+	for line in broken do widest = max(widest, line.Width)
+	return {widest, MeasureText("", Font, Size).y * f32(len(broken))}
+}
+
 // label_measure returns the block size a text takes at `Width` and the lines it broke into,
 // reusing the cached entry when the key did not change.
 @(private)

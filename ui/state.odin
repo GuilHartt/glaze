@@ -74,6 +74,7 @@ State :: struct {
 	tick:      u32,
 	clicks:    [MouseButton]Click,
 	hover_ids: [dynamic]Id,
+	hover_owner: Id,
 	press_ids: [MouseButton]Id,
 	press_pos: [MouseButton]Vec2,
 	click_ids: [MouseButton]Id,
@@ -132,6 +133,11 @@ SetUiScale :: proc(Scale: f32) {
 // ViewportSize returns the surface the UI is laid out into, in layout units.
 ViewportSize :: proc() -> Vec2 {
 	return viewport_size()
+}
+
+// FrameCount returns how many frames have started since the program launched.
+FrameCount :: proc() -> u32 {
+	return state.tick
 }
 
 // Storage returns the `T` stored under `Id`, allocating a zero value the first time that id

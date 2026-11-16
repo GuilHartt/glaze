@@ -233,6 +233,11 @@ DeltaTime :: proc() -> f32 {
 	return time.Delta
 }
 
+// ElapsedTime returns the total time elapsed since the first frame, in seconds.
+ElapsedTime :: proc() -> f32 {
+	return time.Total
+}
+
 // AddDeltaTime feeds the time elapsed since the previous frame, in seconds. Call it once per
 // frame, before Begin.
 AddDeltaTime :: proc(Delta: f32) {
