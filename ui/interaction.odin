@@ -169,11 +169,13 @@ record_click :: proc(Button: MouseButton, Id: Id) {
 // container knows the pointer is inside it; the owner answers for a press.
 @(private)
 interaction_begin :: proc() #no_bounds_check {
-	owner := resolve_hover(hit_target(MousePos()))
+	pos := MousePos()
+	owner := resolve_hover(hit_target(pos))
 
 	for button in MouseButton {
 		if MousePressed(button) {
 			state.press_ids[button] = owner
+			state.press_pos[button] = pos
 		}
 
 		state.click_ids[button] = 0

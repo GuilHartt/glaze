@@ -32,6 +32,7 @@ End :: proc() {
 	draw_begin_frame()
 	layout()
 	draw_build()
+	drag_drop_end()
 	input_end_frame()
 }
 
@@ -77,6 +78,15 @@ SetStyle :: proc(Id: Id, Style: Style) {
 	} else {
 		report("ui: SetStyle without a matching element")
 	}
+}
+
+// Bounds returns the rect the element was laid out with, as of the last End. An `Id` of 0
+// targets the last element declared.
+Bounds :: proc(Id: Id = 0) -> Rect {
+	if i := node_of(target_id(Id)); i != NO_NODE {
+		return state.nodes[i].rect
+	}
+	return {}
 }
 
 // PushId opens a new id scope, so the elements inside derive their ids from a fresh seed
