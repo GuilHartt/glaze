@@ -219,9 +219,10 @@ BindClipboard :: proc(
 	input.ClipboardUser = User
 }
 
-// Time holds the per-frame timing that the backend feeds, alongside Input.
+// Time holds the timing the backend feeds: the delta of the last frame and the total elapsed.
 Time :: struct {
 	Delta: f32,
+	Total: f32,
 }
 
 @(private)
@@ -236,4 +237,5 @@ DeltaTime :: proc() -> f32 {
 // frame, before Begin.
 AddDeltaTime :: proc(Delta: f32) {
 	time.Delta = Delta
+	time.Total += Delta
 }

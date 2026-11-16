@@ -30,6 +30,19 @@ Clicked :: proc(Id: Id = 0, Button: MouseButton = .Left) -> bool {
 	return state.click_ids[Button] != 0 && target_id(Id) == state.click_ids[Button]
 }
 
+// DoubleClicked reports whether `Id` took two clicks in a row with `Button` this frame. An
+// `Id` of 0 targets the last element declared.
+DoubleClicked :: proc(Id: Id = 0, Button: MouseButton = .Left) -> bool {
+	return ClickCount(Id, Button) == 2
+}
+
+// ClickCount reports how many clicks in a row `Id` took this frame, or 0 when no click landed
+// there. An `Id` of 0 targets the last element declared.
+ClickCount :: proc(Id: Id = 0, Button: MouseButton = .Left) -> int {
+	if state.click_ids[Button] == 0 || state.click_ids[Button] != target_id(Id) do return 0
+	return int(state.clicks[Button].count)
+}
+
 // Focused reports whether `Id` owns the keyboard focus. An `Id` of 0 targets the last element
 // declared.
 Focused :: proc(Id: Id = 0) -> bool {
@@ -118,6 +131,39 @@ set_hover :: proc(i: u32) #no_bounds_check {
 	append(&state.hover_ids, state.nodes[i].id)
 }
 
+// Click is the last click of one button: the element it hit, when, where, and how many in a
+// row landed there.
+@(private)
+Click :: struct {
+	id:    Id,
+	count: u8,
+	pos:   Vec2,
+	time:  f32,
+}
+
+// record_click updates the click track of `Button` with a click on `Id`, counting a sequence
+// when two clicks land close in time and place.
+@(private)
+record_click :: proc(Button: MouseButton, Id: Id) {
+	// Two clicks on the same element within this time and distance are one sequence.
+	TIME :: 0.30
+	SLOP :: 6
+
+	click := &state.clicks[Button]
+	pos := MousePos()
+	delta := pos - click.pos
+	dist := delta.x * delta.x + delta.y * delta.y
+	if click.id == Id && time.Total - click.time <= TIME && dist <= SLOP * SLOP {
+		click.count += 1
+	} else {
+		click.count = 1
+	}
+
+	click.id = Id
+	click.time = time.Total
+	click.pos = pos
+}
+
 // interaction_begin turns the pointer and the button edges into the hover chain and the press
 // owner of each button. The chain is the element under the pointer and its ancestors, so a
 // container knows the pointer is inside it; the owner answers for a press.
@@ -135,6 +181,7 @@ interaction_begin :: proc() #no_bounds_check {
 			pressed := state.press_ids[button]
 			if pressed != 0 && pressed == owner {
 				state.click_ids[button] = pressed
+				record_click(button, pressed)
 			}
 			state.press_ids[button] = 0
 		}

@@ -87,6 +87,7 @@ Screen :: struct {
 State :: struct {
 	screen:    Screen,
 	tick:      u32,
+	clicks:    [MouseButton]Click,
 	hover_ids: [dynamic]Id,
 	press_ids: [MouseButton]Id,
 	click_ids: [MouseButton]Id,
