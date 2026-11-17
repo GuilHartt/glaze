@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.8.0] - 2026-11-17
+
+### Added
+
+* `HitMode`, with `Auto`, `Stop`, `Pass` and `Ignore`, so an element decides whether it is seen, observes or owns a press, and the leaves take `Hit` beside their size
+* `Floating`, a block out of the flow anchored to an element, the parent, the root or the pointer, with a pivot and a viewport clamp, above the tree
+* `SetStyle`, so a widget picks the hover or pressed look after opening its element
+* `LastId`, the id of the last element declared, which the interaction queries use when no id is given
+* `SetCursor`, `Cursor` and `CursorIcon`, a cursor request per frame that the backend reads after `End`
+* `Focusable`, `Focused`, `RequestFocus` and `ClearFocus`, with Tab walking the declaration order
+* `DoubleClicked` and `ClickCount`, counting clicks on one element within 0.30 s and 6 layout units
+* `Dragging`, `DragTarget`, `AcceptDragDropPayload` and `SetDragDropPayload`, moving typed data between a source and one target
+* `HoveredId`, `PressedId`, `ClickedId` and `FocusedId`, so the host reads the interaction owner without testing every id
+* `Activated`, one test for a click or a focused Enter/Space
+* `ElapsedTime`, `FrameCount` and `MeasureTextWrapped`
+* `ElementRect`, the rect an element had in the last finished layout, readable while the next frame is being declared
+* `EnsureVisible`, scrolling the scrolling ancestors of an element after `End`
+
+### Changed
+
+* `HitMode` replaces `Hit`, and `Hovered` answers for the element and its ancestors while `Pressed` and `Clicked` answer for the owner
+* `Pressed` and `Clicked` take a mouse button, so each button has its own owner
+* the wheel consumes the delta from the deepest container and hands the rest to the parent
+* `RequestFocus(0)` targets the last element, and `ClearFocus` clears the focus
+* `Id` is `ElementId`, and the public surface takes an `Element`
+* `PushId` takes an explicit seed, which stays stable when a list is reordered and does not shift the following automatic ids
+* the library reads its checks and asserts from Odin's build mode
+
+### Removed
+
+* `Hit`, replaced by `HitMode`
+* `glaze_errors_assert` and `glaze_checks`, since the build mode decides
+* `LabelCache` and `LabelKey` are no longer public
+
+### Fixed
+
+* `ElementRect` ignores a placement the arrangement did not write, so a stale rect never answers
+* `LastId` returns 0 before the first frame instead of reading an empty array
+* only `Auto` scroll writes and reads the strip storage, so a tree without it keeps the map empty
+
+### Performance
+
+* measure and resolve walk the flat pre-order array, and the hover chain and a floating anchor follow parent indices instead of scanning the node array
+
 ## [0.7.0] - 2026-11-14
 
 ### Added
