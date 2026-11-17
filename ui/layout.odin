@@ -29,6 +29,19 @@ RectOverlaps :: #force_inline proc "contextless" (A, B: Rect) -> bool {
 	       A.y < B.y + B.h && B.y < A.y + A.h
 }
 
+// PrevLayout is one element as the last finished layout left it, at the index it had.
+PrevLayout :: struct {
+	id:   Id,
+	rect: Rect,
+}
+
+// prev_at returns the entry for node `i`, or zero before any layout has finished.
+@(private)
+prev_at :: proc(i: u32) -> PrevLayout #no_bounds_check {
+	if int(i) >= len(state.prev) do return {}
+	return state.prev[i]
+}
+
 Node :: struct {
 	config:       LayoutConfig,
 	style:        Style,
@@ -292,100 +305,98 @@ cross_size :: proc(n: ^Node, child: ^Node, space: f32, A: ScrollAxis) -> f32 {
 	return size
 }
 
-// measure_width gives every node its intrinsic width, bottom up, before any width is known.
-// A text leaf measures unwrapped, so its width is its longest line; a container adds its
-// children up along a Row and takes the widest one in a Column.
+// measure_width gives every node its intrinsic width, bottom up. A text leaf measures
+// unwrapped, so its width is its longest line; a container adds its children up along a Row
+// and takes the widest one in a Column. Walking the flat array backwards visits each node
+// after its whole subtree, which is the order the answer needs.
 @(private="file")
-measure_width :: proc(i: u32) #no_bounds_check {
-	n := &state.nodes[i]
-	n.strips = {}
-	if strip_reserved(n, .Vertical) do n.strips += {.Vertical}
-	if strip_reserved(n, .Horizontal) do n.strips += {.Horizontal}
+measure_width :: proc() #no_bounds_check {
+	#reverse for &n, i in state.nodes {
+		n.strips = {}
+		if strip_reserved(&n, .Vertical) do n.strips += {.Vertical}
+		if strip_reserved(&n, .Horizontal) do n.strips += {.Horizontal}
 
-	switch &content in n.content {
-	case TextContent:
-		n.content_size, content.lines = label_measure(content, 0)
-	case PaintProc:
-	case ImageContent:
-		n.content_size = {
-			content.handle.Width  / state.screen.dpi,
-			content.handle.Height / state.screen.dpi,
+		switch &content in n.content {
+		case TextContent:
+			n.content_size, content.lines = label_measure(content, 0)
+		case PaintProc:
+		case ImageContent:
+			n.content_size = {
+				content.handle.Width  / state.screen.dpi,
+				content.handle.Height / state.screen.dpi,
+			}
+		case:
+			sum, widest: f32
+			count := 0
+			for c := u32(i) + 1; c < n.subtree_end; c = next_sibling(c) {
+				if state.nodes[c].floating do continue
+				w := state.nodes[c].base.x
+				sum += w
+				widest = max(widest, w)
+				count += 1
+			}
+			n.content_size.x = sum + gaps(&n, count) if n.direction == .Row else widest
 		}
-	case:
-		sum, widest: f32
-		count := 0
-		for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
-			measure_width(c)
-			if state.nodes[c].floating do continue
-			w := state.nodes[c].base.x
-			sum += w
-			widest = max(widest, w)
-			count += 1
-		}
-		n.content_size.x = sum + gaps(n, count) if n.direction == .Row else widest
+		n.base.x = resolve_axis(n.config.Width, n.content_size.x + inset(&n).x)
+		if n.floating do n.rect.w = n.base.x
 	}
-	n.base.x = resolve_axis(n.config.Width, n.content_size.x + inset(n).x)
-	if n.floating do n.rect.w = n.base.x
 }
 
-// resolve_width fixes the width of node i to the one its parent gave it, then shares the
-// inner width among its children: a Row splits it along X by flex, a Column gives each child
-// its cross size. Each child's width is final before its own children are placed, so a text
-// can wrap against it later.
+// resolve_width fixes each node's width to the one its parent gave it, then shares the inner
+// width among its children: a Row splits it along X by flex, a Column gives each child its
+// cross size. Pre-order puts a parent before its children, so one forward pass replaces the
+// recursion.
 @(private="file")
-resolve_width :: proc(i: u32, Width: f32) #no_bounds_check {
-	n := &state.nodes[i]
-	n.rect.w = Width
-	if i + 1 >= n.subtree_end do return
+resolve_width :: proc(Width: f32) #no_bounds_check {
+	state.nodes[0].rect.w = Width
+	for &n, i in state.nodes {
+		if u32(i) + 1 >= n.subtree_end do continue
 
-	space := children_space(n, .Horizontal, max(Width - inset(n).x, 0))
-	if n.direction == .Row {
-		items := collect_flex(i, .Horizontal)
-		base_sum: f32
-		for it in items do base_sum += it.base
-		resolve_flex(items, space - base_sum - gaps(n, len(items)))
-		for it in items do state.nodes[it.node].rect.w = it.size
-	} else {
-		for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
-			child := &state.nodes[c]
-			if child.floating do continue
-			child.rect.w = cross_size(n, child, space, .Horizontal)
+		space := children_space(&n, .Horizontal, max(n.rect.w - inset(&n).x, 0))
+		if n.direction == .Row {
+			items := collect_flex(u32(i), .Horizontal)
+			base_sum: f32
+			for it in items do base_sum += it.base
+			resolve_flex(items, space - base_sum - gaps(&n, len(items)))
+			for it in items do state.nodes[it.node].rect.w = it.size
+		} else {
+			for c := u32(i) + 1; c < n.subtree_end; c = next_sibling(c) {
+				child := &state.nodes[c]
+				if child.floating do continue
+				child.rect.w = cross_size(&n, child, space, .Horizontal)
+			}
 		}
-	}
-
-	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
-		resolve_width(c, state.nodes[c].rect.w)
 	}
 }
 
 // measure_height gives every node its intrinsic height, bottom up, once every width is final.
-// A wrapping text breaks its lines against the width it was given, so its height is the height
-// of those lines. A container stacks its children along a Column and takes the tallest in a Row.
+// A wrapping text breaks its lines against the width it was given. Like measure_width, it walks
+// the array backwards so each child is measured before the parent that reads it.
 @(private="file")
-measure_height :: proc(i: u32) #no_bounds_check {
-	n := &state.nodes[i]
-	switch &content in n.content {
-	case TextContent:
-		if content.wrap != .None {
-			n.content_size, content.lines = label_measure(content, max(n.rect.w - inset(n).x, 0))
+measure_height :: proc() #no_bounds_check {
+	#reverse for &n, i in state.nodes {
+		switch &content in n.content {
+		case TextContent:
+			if content.wrap != .None {
+				n.content_size, content.lines = label_measure(content, max(n.rect.w - inset(&n).x, 0))
+			}
+		case ImageContent:
+		case PaintProc:
+		case:
+			sum, tallest: f32
+			count := 0
+			for c := u32(i) + 1; c < n.subtree_end; c = next_sibling(c) {
+				if state.nodes[c].floating do continue
+				h := state.nodes[c].base.y
+				sum += h
+				tallest = max(tallest, h)
+				count += 1
+			}
+			n.content_size.y = sum + gaps(&n, count) if n.direction == .Column else tallest
 		}
-	case ImageContent:
-	case PaintProc:
-	case:
-		sum, tallest: f32
-		count := 0
-		for c := i + 1; c < n.subtree_end; c = next_sibling(c) {
-			measure_height(c)
-			if state.nodes[c].floating do continue
-			h := state.nodes[c].base.y
-			sum += h
-			tallest = max(tallest, h)
-			count += 1
-		}
-		n.content_size.y = sum + gaps(n, count) if n.direction == .Column else tallest
+		n.base.y = resolve_axis(n.config.Height, n.content_size.y + inset(&n).y)
+		if n.floating do n.rect.h = n.base.y
 	}
-	n.base.y = resolve_axis(n.config.Height, n.content_size.y + inset(n).y)
-	if n.floating do n.rect.h = n.base.y
 }
 
 // arrange places node i and its subtree, top-down. Its width and position come from its
@@ -394,12 +405,7 @@ measure_height :: proc(i: u32) #no_bounds_check {
 @(private="file")
 arrange :: proc(i: u32) #no_bounds_check {
 	n := &state.nodes[i]
-	when CHECKS {
-		if previous, seen := seen_ids[n.id]; seen {
-			report(fmt.ctprintf("ui: duplicate element id at node %v and node %v", previous, i))
-		}
-		seen_ids[n.id] = i
-	}
+	state.prev[i] = PrevLayout{id = n.id, rect = n.rect}
 	if i + 1 >= n.subtree_end do return
 
 	// The node is rebuilt every tick, so the answer Auto needs has to survive outside it, and
@@ -521,10 +527,35 @@ place_floats :: proc() #no_bounds_check {
 @(private)
 layout :: proc() {
 	size := viewport_size()
-	measure_width(0)
-	resolve_width(0, size.x)
-	measure_height(0)
+	resize(&state.prev, len(state.nodes))
+
+	measure_width()
+	resolve_width(size.x)
+	measure_height()
 	state.nodes[0].rect = Rect{0, 0, size.x, size.y}
 	arrange(0)
 	place_floats()
+
+	when ODIN_DEBUG {
+		check_ids()
+	}
 }
+
+// check_ids reports two nodes that landed on the same id. A `-debug` diagnostic: it costs a map
+// and a pass over every node, and ids are a 32-bit hash, so a collision is possible but rare.
+when ODIN_DEBUG {
+	@(private)
+	check_ids :: proc() {
+		seen: map[Id]u32
+		defer delete(seen)
+
+		for &n, i in state.nodes {
+			if previous, ok := seen[n.id]; ok {
+				report(fmt.ctprintf("ui: duplicate element id at node %v and node %v", previous, i))
+				return
+			}
+			seen[n.id] = u32(i)
+		}
+	}
+}
+

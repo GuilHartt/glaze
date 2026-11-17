@@ -13,9 +13,6 @@ Begin :: proc() {
 	label_purge()
 	state.tick += 1
 	state.cursor = .Arrow
-	when CHECKS {
-		clear(&seen_ids)
-	}
 	append(&state.scopes, Scope{id = ROOT_SEED, node = NO_NODE})
 	size := viewport_size()
 	Open({Width = Fixed(size.x), Height = Fixed(size.y), Hit = .Pass}, {}, .Column)
@@ -80,11 +77,19 @@ SetStyle :: proc(Id: Id, Style: Style) {
 	}
 }
 
-// Bounds returns the rect the element was laid out with, as of the last End. An `Id` of 0
-// targets the last element declared.
-Bounds :: proc(Id: Id = 0) -> Rect {
-	if i := node_of(target_id(Id)); i != NO_NODE {
-		return state.nodes[i].rect
+// ElementRect returns the rect the element was laid out with in the last finished layout: the
+// previous frame while a frame is being declared, and the frame just finished after End. An
+// `Id` of 0 targets the last element declared.
+ElementRect :: proc(Id: Id = 0) -> Rect {
+	target := target_id(Id)
+
+	// The last element declared usually shares its index with the previous layout.
+	if last := len(state.nodes) - 1; last >= 0 {
+		if prev := prev_at(u32(last)); prev.id == target do return prev.rect
+	}
+
+	#reverse for &prev in state.prev {
+		if prev.id == target do return prev.rect
 	}
 	return {}
 }

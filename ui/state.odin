@@ -22,21 +22,6 @@ StorageKey :: struct {
 	type: typeid,
 }
 
-// ERRORS_ASSERT makes a misuse of the library trap instead of only reporting it. Turn it off
-// with -define:glaze_errors_assert=false.
-@(private="file")
-ERRORS_ASSERT :: #config(glaze_errors_assert, true)
-
-// CHECKS enables the structural checks that cost time, such as the duplicate id scan. Turn it
-// off with -define:glaze_checks=false.
-@(private)
-CHECKS :: #config(glaze_checks, true)
-
-// seen_ids catches two elements landing on the same id, which a 32 bit hash can produce.
-when CHECKS {
-	@(private) seen_ids: map[Id]u32
-}
-
 // ErrorProc receives a message when the library detects a misuse it can recover from, such as
 // an unbalanced PushId or a duplicate element id.
 ErrorProc :: #type proc(Message: cstring, User: rawptr)
@@ -47,25 +32,25 @@ error_proc: ErrorProc
 @(private="file")
 error_user: rawptr
 
-// BindError installs the callback that receives those messages. With none bound and
-// ERRORS_ASSERT off, the library writes them to stderr.
+// BindError installs the callback that receives those messages. A build with asserts keeps the
+// debugger trap, and a build without them writes to stderr when no callback is bound.
 BindError :: proc(Fn: ErrorProc, User: rawptr = nil) {
 	error_proc = Fn
 	error_user = User
 }
 
-// report sends one misuse message to the callback and, when ERRORS_ASSERT is on, traps so the
-// mistake is not lost in a log nobody reads.
+// report sends one misuse message to the callback. A build with asserts traps, so the mistake
+// is not lost in a log nobody reads; a build without them only reports.
 @(private)
 report :: proc(Message: cstring) {
 	if error_proc != nil {
 		error_proc(Message, error_user)
 	}
 
-	when ERRORS_ASSERT {
-		assert(false, string(Message))
-	} else {
+	when ODIN_DISABLE_ASSERT {
 		if error_proc == nil do report_stderr(Message)
+	} else {
+		assert(false, string(Message))
 	}
 }
 
@@ -97,6 +82,7 @@ State :: struct {
 	drag_drop: DragDrop,
 	cursor:    CursorIcon,
 	storage:   map[StorageKey]rawptr,
+	prev:      [dynamic]PrevLayout,
 	nodes:     [dynamic]Node,
 	scopes:    [dynamic]Scope,
 	floats:    [dynamic]Float,

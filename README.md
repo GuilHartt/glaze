@@ -60,23 +60,27 @@ backend.Render()  // per frame: draw the commands
 
 ## Building
 
-During development the library's checks and asserts should be on, so build with `-debug`:
+The library takes its own settings from Odin's build mode, so there is nothing to
+configure. During development build with `-debug`:
 
 ```
 odin run . -debug
 ```
 
-A build meant for other people turns them off explicitly:
+A build meant for other people uses Odin's own flags:
 
 ```
-odin build . -o:speed -define:glaze_errors_assert=false -define:glaze_checks=false
+odin build . -o:speed -disable-assert
 ```
 
 * `-o:speed` turns the optimizer on. The Odin default, `-o:minimal`, does little.
-* `glaze_errors_assert` traps on a misuse, such as an unbalanced `PushId`. Turned off, the library reports through `BindError` instead of taking the program down.
-* `glaze_checks` runs the structural checks that cost time, such as the duplicate id scan. Turned off, they are not compiled in.
+* A build with asserts traps on a misuse, such as an unbalanced `PushId` or a
+  duplicate element id. With `-disable-assert` the library reports through
+  `BindError` and keeps running, and the structural checks that only diagnose a
+  mistake — the duplicate id scan — are not compiled in at all.
 
-Both configs are on by default, which is what you want while building something. In a build that ships, `BindError` is worth wiring even with the assert off, so a mistake in interface code lands in your log instead of nowhere.
+In a build that ships, `BindError` is worth wiring, so a mistake in interface code
+lands in your log instead of nowhere.
 
 ## Writing a backend
 
