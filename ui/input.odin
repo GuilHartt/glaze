@@ -64,7 +64,7 @@ Input :: struct {
 @(private)
 input: Input
 
-// input_end_frame snapshots the current state for the next tick's edge queries and clears the
+// input_end_frame snapshots the current state for the next frame's edge queries and clears the
 // per-frame accumulators. Called by End.
 @(private)
 input_end_frame :: proc() {

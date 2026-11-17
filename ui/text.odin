@@ -20,6 +20,7 @@ Line :: struct {
 // LabelKey is what a wrapped result depends on: the words, and the font, size, mode, width
 // and scale they were broken for. Text that matches shares one entry, and the cache owns a
 // copy of `text`, so a key outlives the caller's buffer.
+@(private="file")
 LabelKey :: struct {
 	text:  string,
 	font:  Font,
@@ -29,10 +30,11 @@ LabelKey :: struct {
 	scale: f32,
 }
 
-// LabelCache is the wrapped layout of one text. `tick` is what the purge reads to drop the
+// LabelCache is the wrapped layout of one text. `frame` is what the purge reads to drop the
 // entries no label asked for.
+@(private="file")
 LabelCache :: struct {
-	tick:  u32,
+	frame: u32,
 	block: Vec2,
 	lines: [dynamic]Line,
 }
@@ -80,7 +82,7 @@ label_measure :: proc(Content: TextContent, Width: f32) -> (block: Vec2, broken:
 }
 
 // cached_label returns the entry for this text, wrapping again when the key changed, and
-// marks it as used in the current tick.
+// marks it as used in the current frame.
 @(private="file")
 cached_label :: proc(Content: TextContent, Width: f32) -> ^LabelCache {
 	key := LabelKey{
@@ -93,14 +95,14 @@ cached_label :: proc(Content: TextContent, Width: f32) -> ^LabelCache {
 	}
 
 	if cached, ok := &label_cache[key]; ok {
-		cached.tick = state.tick
+		cached.frame = state.frame
 		return cached
 	}
 
 	key.text = strings.clone(key.text)
 	block := wrap_block(Content, Width)
 
-	label_cache[key] = LabelCache{tick = state.tick, block = block}
+	label_cache[key] = LabelCache{frame = state.frame, block = block}
 	cached := &label_cache[key]
 
 	resize(&cached.lines, len(lines))
@@ -108,12 +110,12 @@ cached_label :: proc(Content: TextContent, Width: f32) -> ^LabelCache {
 	return cached
 }
 
-// label_purge drops the entries no label asked for in the tick that just ended.
+// label_purge drops the entries no label asked for in the frame that just ended.
 @(private)
 label_purge :: proc() {
 	clear(&stale)
 	for key, cached in label_cache {
-		if cached.tick != state.tick do append(&stale, key)
+		if cached.frame != state.frame do append(&stale, key)
 	}
 	for key in stale {
 		if cached, ok := label_cache[key]; ok do delete(cached.lines)

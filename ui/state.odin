@@ -9,7 +9,7 @@ import "core:fmt"
 // already been opened inside it, and the node it belongs to, which is NO_NODE for a PushId.
 @(private)
 Scope :: struct {
-	id:    Id,
+	id:    ElementId,
 	count: u32,
 	node:  u32,
 }
@@ -18,7 +18,7 @@ Scope :: struct {
 // keep several values at once, as long as their types differ.
 @(private="file")
 StorageKey :: struct {
-	id:   Id,
+	id:   ElementId,
 	type: typeid,
 }
 
@@ -70,24 +70,25 @@ Screen :: struct {
 }
 
 State :: struct {
-	screen:    Screen,
-	tick:      u32,
-	clicks:    [MouseButton]Click,
-	hover_ids: [dynamic]Id,
-	hover_owner: Id,
-	press_ids: [MouseButton]Id,
-	press_pos: [MouseButton]Vec2,
-	click_ids: [MouseButton]Id,
-	focus_id:  Id,
-	drag:      ScrollDrag,
-	drag_drop: DragDrop,
-	cursor:    CursorIcon,
-	storage:   map[StorageKey]rawptr,
-	prev:      [dynamic]PrevLayout,
-	nodes:     [dynamic]Node,
-	scopes:    [dynamic]Scope,
-	floats:    [dynamic]Float,
-	flexes:    [dynamic]Flex,
+	screen:      Screen,
+	frame:       u32,
+	clicks:      [MouseButton]Click,
+	hover_ids:   [dynamic]ElementId,
+	hover_owner: ElementId,
+	press_ids:   [MouseButton]ElementId,
+	press_pos:   [MouseButton]Vec2,
+	click_ids:   [MouseButton]ElementId,
+	focus_id:    ElementId,
+	drag:        ScrollDrag,
+	drag_drop:   DragDrop,
+	cursor:      CursorIcon,
+	storage:     map[StorageKey]rawptr,
+	prev:        [dynamic]Placement,
+	published:   u32,
+	nodes:       [dynamic]Node,
+	scopes:      [dynamic]Scope,
+	floats:      [dynamic]Float,
+	flexes:      [dynamic]Flex,
 }
 
 @(private)
@@ -137,14 +138,14 @@ ViewportSize :: proc() -> Vec2 {
 
 // FrameCount returns how many frames have started since the program launched.
 FrameCount :: proc() -> u32 {
-	return state.tick
+	return state.frame
 }
 
-// Storage returns the `T` stored under `Id`, allocating a zero value the first time that id
+// Storage returns the `T` stored under `Element`, allocating a zero value the first time that id
 // asks for that type. Widgets keep their state here, keyed by their own id, and one element
 // may hold as many types as it needs.
-Storage :: proc(Id: Id, $T: typeid) -> ^T {
-	key := StorageKey{id = Id, type = T}
+Storage :: proc(Element: ElementId, $T: typeid) -> ^T {
+	key := StorageKey{id = Element, type = T}
 	if ptr, ok := state.storage[key]; ok do return (^T)(ptr)
 
 	ptr := new(T)

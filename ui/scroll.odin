@@ -28,16 +28,74 @@ SCROLLBAR_THICKNESS :: f32(6)
 @(private)
 SCROLLBAR_GAP :: f32(4)
 
-// ScrollOffset returns the scroll offset stored for `Id`, in pixels. When `Id` is 0 it
+// ScrollOffset returns the scroll offset stored for `Element`, in pixels. When `Element` is 0 it
 // targets the last element declared.
-ScrollOffset :: proc(Id: Id = 0) -> Vec2 {
-	return Storage(target_id(Id), Vec2)^
+ScrollOffset :: proc(Element: ElementId = 0) -> Vec2 {
+	return Storage(target_id(Element), Vec2)^
 }
 
-// SetScroll stores the scroll offset for `Id`, in pixels. When `Id` is 0 it targets the last
+// SetScroll stores the scroll offset for `Element`, in pixels. When `Element` is 0 it targets the last
 // element declared.
-SetScroll :: proc(Offset: Vec2, Id: Id = 0) {
-	Storage(target_id(Id), Vec2)^ = Offset
+SetScroll :: proc(Offset: Vec2, Element: ElementId = 0) {
+	Storage(target_id(Element), Vec2)^ = Offset
+}
+
+// EnsureVisible scrolls the scrolling ancestors of `Element` so its rect sits inside them in the
+// next layout. Call it after End. An `Element` of 0 targets the last element declared.
+EnsureVisible :: proc(Element: ElementId = 0) {
+	target := target_id(Element)
+	if target == 0 do return
+
+	index := NO_NODE
+	#reverse for &p, i in state.prev {
+		if p.frame == state.published && p.id == target {
+			index = u32(i)
+			break
+		}
+	}
+	if index == NO_NODE do return
+	if int(index) >= len(state.nodes) || state.nodes[index].id != target do return
+
+	rect := state.prev[index].rect
+	i := state.prev[index].parent
+	for i != NO_NODE {
+		if int(i) >= len(state.nodes) || state.prev[i].frame != state.published do break
+		if state.nodes[i].id != state.prev[i].id do break
+
+		n := &state.nodes[i]
+		if scrolls(n, .Vertical) || scrolls(n, .Horizontal) {
+			inner := inner_rect(i, n.rect)
+			offset := ScrollOffset(n.id)
+			next := offset
+			limit := scroll_limit(n, inner)
+
+			if scrolls(n, .Vertical) {
+				if rect.y < inner.y {
+					next.y = offset.y - (inner.y - rect.y)
+				} else if rect.y + rect.h > inner.y + inner.h {
+					next.y = offset.y + (rect.y + rect.h - inner.y - inner.h)
+				}
+				next.y = clamp(next.y, 0, limit.y)
+			}
+			if scrolls(n, .Horizontal) {
+				if rect.x < inner.x {
+					next.x = offset.x - (inner.x - rect.x)
+				} else if rect.x + rect.w > inner.x + inner.w {
+					next.x = offset.x + (rect.x + rect.w - inner.x - inner.w)
+				}
+				next.x = clamp(next.x, 0, limit.x)
+			}
+
+			delta := next - offset
+			if delta.x != 0 || delta.y != 0 {
+				SetScroll(next, n.id)
+				rect.x -= delta.x
+				rect.y -= delta.y
+			}
+		}
+
+		i = state.prev[i].parent
+	}
 }
 
 // scroll_mode returns how `Axis` scrolls.
@@ -99,8 +157,8 @@ strips :: proc(n: ^Node, content: Vec2) -> bit_set[ScrollAxis] {
 	return out
 }
 
-// strip_reserved reports whether the strip of `Axis` is out of the content for this tick.
-// Only Auto reads the answer the arrangement stored in the tick that just ended.
+// strip_reserved reports whether the strip of `Axis` is out of the content for this frame.
+// Only Auto reads the answer the arrangement stored in the frame that just ended.
 @(private)
 strip_reserved :: proc(n: ^Node, Axis: ScrollAxis) -> bool {
 	#partial switch scroll_mode(n, Axis) {
@@ -116,7 +174,7 @@ strip_reserved :: proc(n: ^Node, Axis: ScrollAxis) -> bool {
 // the thumb and the wheel stands down until the release.
 @(private)
 ScrollDrag :: struct {
-	id:   Id,
+	id:   ElementId,
 	axis: ScrollAxis,
 	grab: f32,
 }

@@ -13,7 +13,7 @@ DRAG_THRESHOLD :: 6
 // set.
 @(private)
 DragDrop :: struct {
-	source:    Id,
+	source:    ElementId,
 	button:    MouseButton,
 	type:      typeid,
 	data:      [PAYLOAD_MAX]u8,
@@ -22,10 +22,10 @@ DragDrop :: struct {
 	delivered: bool,
 }
 
-// Dragging reports whether `Id` is the active drag source with `Button`: the press started there
+// Dragging reports whether `Element` is the active drag source with `Button`: the press started there
 // and the pointer moved past the threshold. 0 is the last element declared.
-Dragging :: proc(Id: Id = 0, Button: MouseButton = .Left) -> bool {
-	source := target_id(Id)
+Dragging :: proc(Element: ElementId = 0, Button: MouseButton = .Left) -> bool {
+	source := target_id(Element)
 	dd := &state.drag_drop
 
 	if !dd.active {
@@ -56,20 +56,20 @@ SetDragDropPayload :: proc(Data: ^$T) {
 	dd.size = size_of(T)
 }
 
-// DragTarget reports whether a drag of `T` is over `Id`, so a widget can highlight the drop
+// DragTarget reports whether a drag of `T` is over `Element`, so a widget can highlight the drop
 // area. 0 is the last element declared.
-DragTarget :: proc(T: typeid, Id: Id = 0) -> bool {
+DragTarget :: proc(T: typeid, Element: ElementId = 0) -> bool {
 	dd := &state.drag_drop
-	return dd.active && dd.type == T && Hovered(target_id(Id))
+	return dd.active && dd.type == T && Hovered(target_id(Element))
 }
 
-// AcceptDragDropPayload returns the payload once a drag of `T` is released over `Id`, and marks
+// AcceptDragDropPayload returns the payload once a drag of `T` is released over `Element`, and marks
 // it delivered, so only one target takes it. 0 is the last element declared.
-AcceptDragDropPayload :: proc($T: typeid, Id: Id = 0) -> (Data: ^T, ok: bool) {
+AcceptDragDropPayload :: proc($T: typeid, Element: ElementId = 0) -> (Data: ^T, ok: bool) {
 	dd := &state.drag_drop
 	if !dd.active || dd.delivered do return
 	if !MouseReleased(dd.button) do return
-	if !Hovered(target_id(Id)) do return
+	if !Hovered(target_id(Element)) do return
 	if dd.type != typeid_of(T) do return
 	dd.delivered = true
 	return (^T)(&dd.data[0]), true

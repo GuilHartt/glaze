@@ -2,9 +2,12 @@ package ui
 
 import "core:fmt"
 
-Vec2 :: [2]f32
-Rect :: struct{ x, y, w, h: f32 }
-Id   :: distinct u32
+Vec2      :: [2]f32
+Rect      :: struct{ x, y, w, h: f32 }
+
+// ElementId is the stable key an element is declared under. In the queries, 0 targets the last
+// element declared.
+ElementId :: distinct u32
 
 Direction :: enum u8 { Row, Column }
 
@@ -29,15 +32,19 @@ RectOverlaps :: #force_inline proc "contextless" (A, B: Rect) -> bool {
 	       A.y < B.y + B.h && B.y < A.y + A.h
 }
 
-// PrevLayout is one element as the last finished layout left it, at the index it had.
-PrevLayout :: struct {
-	id:   Id,
-	rect: Rect,
+// Placement is where the last finished layout left one element: its id, its parent node, its
+// rect, and the frame it was placed in, at the index the node had.
+@(private)
+Placement :: struct {
+	id:     ElementId,
+	parent: u32,
+	rect:   Rect,
+	frame:  u32,
 }
 
 // prev_at returns the entry for node `i`, or zero before any layout has finished.
 @(private)
-prev_at :: proc(i: u32) -> PrevLayout #no_bounds_check {
+prev_at :: proc(i: u32) -> Placement #no_bounds_check {
 	if int(i) >= len(state.prev) do return {}
 	return state.prev[i]
 }
@@ -53,7 +60,7 @@ Node :: struct {
 	rect:         Rect,
 	clip:         Rect,
 	content:      Content,
-	id:           Id,
+	id:           ElementId,
 	subtree_end:  u32,
 }
 
@@ -78,7 +85,7 @@ ImageContent :: struct {
 
 // PaintProc is the custom draw leaf: a callback the host supplies, run once the rect is
 // known. It is the content variant a widget uses when text and image do not fit.
-PaintProc :: #type proc(Rect: Rect, List: ^DrawList, Id: Id)
+PaintProc :: #type proc(Rect: Rect, List: ^DrawList, Element: ElementId)
 
 Content :: union {
 	TextContent,
@@ -111,21 +118,11 @@ next_sibling :: #force_inline proc(i: u32) -> u32 #no_bounds_check {
 	return state.nodes[i].subtree_end
 }
 
-// node_of returns the node with `Id`, or NO_NODE when the frame has no such element.
+// node_of returns the node with `ElementId`, or NO_NODE when the frame has no such element.
 @(private)
-node_of :: proc(id: Id) -> u32 #no_bounds_check {
+node_of :: proc(id: ElementId) -> u32 #no_bounds_check {
 	#reverse for &n, i in state.nodes {
 		if n.id == id do return u32(i)
-	}
-	return NO_NODE
-}
-
-// parent_of returns the node whose subtree holds node `i`, which is the element it was
-// declared in.
-@(private)
-parent_of :: proc(i: u32) -> u32 #no_bounds_check {
-	#reverse for &n, j in state.nodes[:i] {
-		if n.subtree_end > i do return u32(j)
 	}
 	return NO_NODE
 }
@@ -399,16 +396,16 @@ measure_height :: proc() #no_bounds_check {
 	}
 }
 
-// arrange places node i and its subtree, top-down. Its width and position come from its
-// parent, so this pass resolves the heights along a Column, places each child, and writes the
-// scroll bar state the next tick's Auto answers come from.
+// arrange places node i and its subtree, top-down. `parent` is the node it was declared in,
+// recorded for the interaction chain and EnsureVisible; the pass also writes the scroll bar
+// state the next frame's Auto answers come from.
 @(private="file")
-arrange :: proc(i: u32) #no_bounds_check {
+arrange :: proc(i: u32, parent: u32) #no_bounds_check {
 	n := &state.nodes[i]
-	state.prev[i] = PrevLayout{id = n.id, rect = n.rect}
+	state.prev[i] = Placement{id = n.id, parent = parent, rect = n.rect, frame = state.frame}
 	if i + 1 >= n.subtree_end do return
 
-	// The node is rebuilt every tick, so the answer Auto needs has to survive outside it, and
+	// The node is rebuilt every frame, so the answer Auto needs has to survive outside it, and
 	// only Auto reads it back.
 	if scroll_mode(n, .Vertical) == .Auto || scroll_mode(n, .Horizontal) == .Auto {
 		Storage(n.id, bit_set[ScrollAxis])^ = strips(n, n.content_size)
@@ -477,7 +474,7 @@ arrange_children :: proc(i: u32, inner: Rect) #no_bounds_check {
 		child.rect.x = inner.x + pos.x - scroll.x
 		child.rect.y = inner.y + pos.y - scroll.y
 		cursor += size_along(child.rect, main) + n.config.Gap + extra
-		arrange(c)
+		arrange(c, i)
 	}
 }
 
@@ -491,7 +488,7 @@ place_floats :: proc() #no_bounds_check {
 
 		origin: Vec2
 		switch a in f.anchor {
-		case Id:
+		case ElementId:
 			if a != 0 {
 				if i := node_of(a); i != NO_NODE {
 					origin = padding_origin(i)
@@ -502,9 +499,7 @@ place_floats :: proc() #no_bounds_check {
 		case AnchorKind:
 			switch a {
 			case .Parent:
-				if i := parent_of(f.node); i != NO_NODE {
-					origin = padding_origin(i)
-				}
+				if f.parent != NO_NODE do origin = padding_origin(f.parent)
 			case .Root:
 				origin = {}
 			case .Pointer:
@@ -516,7 +511,7 @@ place_floats :: proc() #no_bounds_check {
 		at := origin + f.offset - f.pivot * extent
 		n.rect.x = clamp(at.x, 0, max(viewport.x - extent.x, 0))
 		n.rect.y = clamp(at.y, 0, max(viewport.y - extent.y, 0))
-		arrange(f.node)
+		arrange(f.node, f.parent)
 	}
 }
 
@@ -533,8 +528,9 @@ layout :: proc() {
 	resolve_width(size.x)
 	measure_height()
 	state.nodes[0].rect = Rect{0, 0, size.x, size.y}
-	arrange(0)
+	arrange(0, NO_NODE)
 	place_floats()
+	state.published = state.frame
 
 	when ODIN_DEBUG {
 		check_ids()
@@ -546,7 +542,7 @@ layout :: proc() {
 when ODIN_DEBUG {
 	@(private)
 	check_ids :: proc() {
-		seen: map[Id]u32
+		seen: map[ElementId]u32
 		defer delete(seen)
 
 		for &n, i in state.nodes {

@@ -11,7 +11,7 @@ Begin :: proc() {
 	clear(&state.scopes)
 	clear(&state.floats)
 	label_purge()
-	state.tick += 1
+	state.frame += 1
 	state.cursor = .Arrow
 	append(&state.scopes, Scope{id = ROOT_SEED, node = NO_NODE})
 	size := viewport_size()
@@ -36,7 +36,7 @@ End :: proc() {
 // Open opens a new node and makes it the parent of everything declared until the matching
 // Close, with an id derived from its parent and position. Prefer Row/Column for the common
 // cases.
-Open :: proc(Config: LayoutConfig = {}, Style: Style = {}, Direction: Direction = .Row) -> Id {
+Open :: proc(Config: LayoutConfig = {}, Style: Style = {}, Direction: Direction = .Row) -> ElementId {
 	parent := &state.scopes[len(state.scopes)-1]
 	node_id := id_mix(parent.id, parent.count)
 	parent.count += 1
@@ -63,14 +63,15 @@ Close :: proc() #no_bounds_check {
 
 // LastId returns the id of the last element declared, leaf or container. The interaction
 // queries take it when no id is passed.
-LastId :: proc() -> Id #no_bounds_check {
+LastId :: proc() -> ElementId #no_bounds_check {
+	if len(state.nodes) == 0 do return 0
 	return state.nodes[len(state.nodes) - 1].id
 }
 
-// SetStyle replaces the style of the element `Id`, which must have been declared this frame.
+// SetStyle replaces the style of the element `Element`, which must have been declared this frame.
 // Widgets use it to pick the visual of an interaction state after opening the element.
-SetStyle :: proc(Id: Id, Style: Style) {
-	if i := node_of(Id); i != NO_NODE {
+SetStyle :: proc(Element: ElementId, Style: Style) {
+	if i := node_of(Element); i != NO_NODE {
 		state.nodes[i].style = Style
 	} else {
 		report("ui: SetStyle without a matching element")
@@ -79,27 +80,31 @@ SetStyle :: proc(Id: Id, Style: Style) {
 
 // ElementRect returns the rect the element was laid out with in the last finished layout: the
 // previous frame while a frame is being declared, and the frame just finished after End. An
-// `Id` of 0 targets the last element declared.
-ElementRect :: proc(Id: Id = 0) -> Rect {
-	target := target_id(Id)
+// `Element` of 0 targets the last element declared.
+ElementRect :: proc(Element: ElementId = 0) -> Rect {
+	target := target_id(Element)
 
 	// The last element declared usually shares its index with the previous layout.
 	if last := len(state.nodes) - 1; last >= 0 {
-		if prev := prev_at(u32(last)); prev.id == target do return prev.rect
+		if prev := prev_at(u32(last)); prev.frame == state.published && prev.id == target {
+			return prev.rect
+		}
 	}
 
 	#reverse for &prev in state.prev {
-		if prev.id == target do return prev.rect
+		if prev.frame == state.published && prev.id == target do return prev.rect
 	}
 	return {}
 }
 
 // PushId opens a new id scope, so the elements inside derive their ids from a fresh seed
-// instead of the enclosing element. Close it with PopId.
-PushId :: proc() {
+// instead of the enclosing element. A `Seed` of 0 derives the scope from the parent and the
+// position; any other `Seed` keeps it stable when a list is reordered. Close it with PopId.
+PushId :: proc(Seed: u32 = 0) {
 	parent := &state.scopes[len(state.scopes)-1]
-	append(&state.scopes, Scope{id = id_mix(parent.id, parent.count), node = NO_NODE})
-	parent.count += 1
+	seed := Seed if Seed != 0 else parent.count
+	append(&state.scopes, Scope{id = id_mix(parent.id, seed), node = NO_NODE})
+	if Seed == 0 do parent.count += 1
 }
 
 // PopId closes the scope opened by PushId.
@@ -138,17 +143,28 @@ AnchorKind :: enum u8 {
 // Anchor is what a floating node is placed against: an element id, or an `AnchorKind` for the
 // element it was declared in, the viewport, or the pointer.
 Anchor :: union {
-	Id,
+	ElementId,
 	AnchorKind,
 }
 
-// Float is one element out of the flow: the node it opened and where it is placed.
+// Float is one element out of the flow: the node it opened, the node it was declared in, and
+// where it is placed.
 @(private)
 Float :: struct {
 	node:   u32,
+	parent: u32,
 	anchor: Anchor,
 	offset: Vec2,
 	pivot:  Vec2,
+}
+
+// current_parent returns the node the next element is declared in, skipping PushId scopes.
+@(private="file")
+current_parent :: proc() -> u32 {
+	#reverse for scope in state.scopes {
+		if scope.node != NO_NODE do return scope.node
+	}
+	return NO_NODE
 }
 
 // Floating opens a node out of the flow at `Offset` from `Anchor`, painted and hit above the
@@ -163,10 +179,12 @@ Floating :: proc(
 	Style:     Style = {},
 	Direction: Direction = .Column,
 ) -> bool #no_bounds_check {
+	parent := current_parent()
 	Open(Config, Style, Direction)
 	state.nodes[len(state.nodes) - 1].floating = true
 	append(&state.floats, Float{
 		node   = u32(len(state.nodes) - 1),
+		parent = parent,
 		anchor = Anchor,
 		offset = Offset,
 		pivot  = Pivot,
@@ -188,7 +206,7 @@ Label :: proc(
 	Wrap:   WrapMode = .None,
 	Align:  TextAlign = .Left,
 	Style:  Style = {},
-) -> Id #no_bounds_check {
+) -> ElementId #no_bounds_check {
 	node_id := Open({Width = Width, Height = Height, Hit = Hit}, Style)
 	state.nodes[len(state.nodes)-1].content = TextContent{
 		text  = Text,
@@ -213,7 +231,7 @@ Image :: proc(
 	Tint:   Color = {255, 255, 255, 255},
 	Fit:    ImageFit = .Stretch,
 	Style:  Style = {},
-) -> Id #no_bounds_check {
+) -> ElementId #no_bounds_check {
 	node_id := Open({Width = Width, Height = Height, Hit = Hit}, Style)
 	state.nodes[len(state.nodes)-1].content = ImageContent{
 		handle = Handle,
@@ -232,7 +250,7 @@ Paint :: proc(
 	Height: Sizing = {Kind = .Fixed, Grow = 1},
 	Hit:    HitMode = .Auto,
 	Style:  Style = {},
-) -> Id #no_bounds_check {
+) -> ElementId #no_bounds_check {
 	node_id := Open({Width = Width, Height = Height, Hit = Hit}, Style)
 	state.nodes[len(state.nodes) - 1].content = Fn
 	Close()
@@ -241,12 +259,12 @@ Paint :: proc(
 
 // The root of every frame's id tree; ids derive from it down the hierarchy.
 @(private="file")
-ROOT_SEED :: Id(0x9e3779b9)
+ROOT_SEED :: ElementId(0x9e3779b9)
 
 // id_mix folds `n` into `seed` to derive a child's id. It is a 32-bit avalanche hash, so
 // neighbouring positions land far apart, and never returns 0 (0 means the last element).
 @(private="file")
-id_mix :: #force_inline proc(seed: Id, n: u32) -> Id {
+id_mix :: #force_inline proc(seed: ElementId, n: u32) -> ElementId {
 	h := u32(seed) ~ n
 	h ~= h >> 16
 	h *= 0x7feb352d
@@ -254,5 +272,5 @@ id_mix :: #force_inline proc(seed: Id, n: u32) -> Id {
 	h *= 0x846ca68b
 	h ~= h >> 16
 	if h == 0 do h = 1
-	return Id(h)
+	return ElementId(h)
 }

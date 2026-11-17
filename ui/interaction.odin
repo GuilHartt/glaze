@@ -3,15 +3,15 @@ package ui
 // target_id resolves the target of an interaction query: `id` when given, or the last element
 // declared, leaf or container, when 0.
 @(private)
-target_id :: #force_inline proc(id: Id) -> Id {
+target_id :: #force_inline proc(id: ElementId) -> ElementId {
 	if id != 0 do return id
 	return LastId()
 }
 
-// Hovered reports whether `Id` is under the pointer, either itself or through one of its
-// children, as it was drawn last tick. An `Id` of 0 targets the last element declared.
-Hovered :: proc(Id: Id = 0) -> bool {
-	Target := target_id(Id)
+// Hovered reports whether `Element` is under the pointer, either itself or through one of its
+// children, as it was drawn last frame. An `Element` of 0 targets the last element declared.
+Hovered :: proc(Element: ElementId = 0) -> bool {
+	Target := target_id(Element)
 	for id in state.hover_ids {
 		if id == Target do return true
 	}
@@ -21,63 +21,63 @@ Hovered :: proc(Id: Id = 0) -> bool {
 // HoveredId returns the element that owns the hover: the nearest `Stop` or non-`Pass` in the
 // chain, or 0 when only pass-through surfaces are under the pointer. Unlike `Hovered`, it
 // needs no id.
-HoveredId :: proc() -> Id {
+HoveredId :: proc() -> ElementId {
 	return state.hover_owner
 }
 
-// Pressed reports whether `Id` took `Button` and has not been released, even when the pointer
-// has moved away. An `Id` of 0 targets the last element declared.
-Pressed :: proc(Id: Id = 0, Button: MouseButton = .Left) -> bool {
-	return state.press_ids[Button] != 0 && target_id(Id) == state.press_ids[Button]
+// Pressed reports whether `Element` took `Button` and has not been released, even when the pointer
+// has moved away. An `Element` of 0 targets the last element declared.
+Pressed :: proc(Element: ElementId = 0, Button: MouseButton = .Left) -> bool {
+	return state.press_ids[Button] != 0 && target_id(Element) == state.press_ids[Button]
 }
 
 // PressedId returns the element that owns `Button`'s press, or 0 when none does. Unlike
 // `Pressed`, it needs no id.
-PressedId :: proc(Button: MouseButton = .Left) -> Id {
+PressedId :: proc(Button: MouseButton = .Left) -> ElementId {
 	return state.press_ids[Button]
 }
 
-// Clicked reports whether `Id` was pressed and released in the same place this tick with
-// `Button`. An `Id` of 0 targets the last element declared.
-Clicked :: proc(Id: Id = 0, Button: MouseButton = .Left) -> bool {
-	return state.click_ids[Button] != 0 && target_id(Id) == state.click_ids[Button]
+// Clicked reports whether `Element` was pressed and released in the same place this frame with
+// `Button`. An `Element` of 0 targets the last element declared.
+Clicked :: proc(Element: ElementId = 0, Button: MouseButton = .Left) -> bool {
+	return state.click_ids[Button] != 0 && target_id(Element) == state.click_ids[Button]
 }
 
-// ClickedId returns the element `Button` clicked this tick, or 0 when no click landed. Unlike
+// ClickedId returns the element `Button` clicked this frame, or 0 when no click landed. Unlike
 // `Clicked`, it needs no id.
-ClickedId :: proc(Button: MouseButton = .Left) -> Id {
+ClickedId :: proc(Button: MouseButton = .Left) -> ElementId {
 	return state.click_ids[Button]
 }
 
-// DoubleClicked reports whether `Id` took two clicks in a row with `Button` this frame. An
-// `Id` of 0 targets the last element declared.
-DoubleClicked :: proc(Id: Id = 0, Button: MouseButton = .Left) -> bool {
-	return ClickCount(Id, Button) == 2
+// DoubleClicked reports whether `Element` took two clicks in a row with `Button` this frame. An
+// `Element` of 0 targets the last element declared.
+DoubleClicked :: proc(Element: ElementId = 0, Button: MouseButton = .Left) -> bool {
+	return ClickCount(Element, Button) == 2
 }
 
-// ClickCount reports how many clicks in a row `Id` took this frame, or 0 when no click landed
-// there. An `Id` of 0 targets the last element declared.
-ClickCount :: proc(Id: Id = 0, Button: MouseButton = .Left) -> int {
-	if state.click_ids[Button] == 0 || state.click_ids[Button] != target_id(Id) do return 0
+// ClickCount reports how many clicks in a row `Element` took this frame, or 0 when no click landed
+// there. An `Element` of 0 targets the last element declared.
+ClickCount :: proc(Element: ElementId = 0, Button: MouseButton = .Left) -> int {
+	if state.click_ids[Button] == 0 || state.click_ids[Button] != target_id(Element) do return 0
 	return int(state.clicks[Button].count)
 }
 
-// Focused reports whether `Id` owns the keyboard focus. An `Id` of 0 targets the last element
+// Focused reports whether `Element` owns the keyboard focus. An `Element` of 0 targets the last element
 // declared.
-Focused :: proc(Id: Id = 0) -> bool {
-	return state.focus_id != 0 && target_id(Id) == state.focus_id
+Focused :: proc(Element: ElementId = 0) -> bool {
+	return state.focus_id != 0 && target_id(Element) == state.focus_id
 }
 
 // FocusedId returns the element that owns the keyboard focus, or 0 when none does. Unlike
 // `Focused`, it needs no id.
-FocusedId :: proc() -> Id {
+FocusedId :: proc() -> ElementId {
 	return state.focus_id
 }
 
-// RequestFocus moves the keyboard focus to `Id`. An `Id` of 0 targets the last element
+// RequestFocus moves the keyboard focus to `Element`. An `Element` of 0 targets the last element
 // declared, matching the interaction queries.
-RequestFocus :: proc(Id: Id = 0) {
-	state.focus_id = target_id(Id)
+RequestFocus :: proc(Element: ElementId = 0) {
+	state.focus_id = target_id(Element)
 }
 
 // ClearFocus drops the keyboard focus, so no element owns it.
@@ -85,11 +85,11 @@ ClearFocus :: proc() {
 	state.focus_id = 0
 }
 
-// Activated reports whether `Id` was clicked or, while focused, activated by Enter or Space.
-// It is the one test a button needs. An `Id` of 0 targets the last element declared.
-Activated :: proc(Id: Id = 0, Button: MouseButton = .Left) -> bool {
-	if Clicked(Id, Button) do return true
-	return Focused(Id) && (KeyPressed(.Enter) || KeyPressed(.Space))
+// Activated reports whether `Element` was clicked or, while focused, activated by Enter or Space.
+// It is the one test a button needs. An `Element` of 0 targets the last element declared.
+Activated :: proc(Element: ElementId = 0, Button: MouseButton = .Left) -> bool {
+	if Clicked(Element, Button) do return true
+	return Focused(Element) && (KeyPressed(.Enter) || KeyPressed(.Space))
 }
 
 // pointer_on reports whether the pointer is over `N`: inside its rect and inside the clip it
@@ -137,24 +137,21 @@ hit_target :: proc(Pos: Vec2) -> u32 #no_bounds_check {
 // returns the owner: the nearest `Stop` on that chain, or the nearest node that is not `Pass`.
 // A floating layer roots its own chain, so the flow it was declared in stays out.
 @(private)
-resolve_hover :: proc(Target: u32) -> Id #no_bounds_check {
+resolve_hover :: proc(Target: u32) -> ElementId #no_bounds_check {
 	clear(&state.hover_ids)
 	if Target == NO_NODE do return 0
 
-	stop, weak: Id
-	n := &state.nodes[Target]
-	append(&state.hover_ids, n.id)
-	if n.config.Hit == .Stop do stop = n.id
-	if n.config.Hit != .Pass do weak = n.id
+	stop, weak: ElementId
+	i := Target
+	for {
+		n := &state.nodes[i]
+		append(&state.hover_ids, n.id)
+		if stop == 0 && n.config.Hit == .Stop do stop = n.id
+		if weak == 0 && n.config.Hit != .Pass do weak = n.id
+		if n.floating do break
 
-	if !n.floating {
-		#reverse for &a in state.nodes[:Target] {
-			if a.subtree_end <= Target do continue
-			append(&state.hover_ids, a.id)
-			if stop == 0 && a.config.Hit == .Stop do stop = a.id
-			if weak == 0 && a.config.Hit != .Pass do weak = a.id
-			if a.floating do break
-		}
+		i = state.prev[i].parent
+		if i == NO_NODE do break
 	}
 
 	return stop if stop != 0 else weak
@@ -173,16 +170,16 @@ set_hover :: proc(i: u32) #no_bounds_check {
 // row landed there.
 @(private)
 Click :: struct {
-	id:    Id,
+	id:    ElementId,
 	count: u8,
 	pos:   Vec2,
 	time:  f32,
 }
 
-// record_click updates the click track of `Button` with a click on `Id`, counting a sequence
+// record_click updates the click track of `Button` with a click on `Element`, counting a sequence
 // when two clicks land close in time and place.
 @(private)
-record_click :: proc(Button: MouseButton, Id: Id) {
+record_click :: proc(Button: MouseButton, Element: ElementId) {
 	// Two clicks on the same element within this time and distance are one sequence.
 	TIME :: 0.30
 	SLOP :: 6
@@ -191,13 +188,13 @@ record_click :: proc(Button: MouseButton, Id: Id) {
 	pos := MousePos()
 	delta := pos - click.pos
 	dist := delta.x * delta.x + delta.y * delta.y
-	if click.id == Id && time.Total - click.time <= TIME && dist <= SLOP * SLOP {
+	if click.id == Element && time.Total - click.time <= TIME && dist <= SLOP * SLOP {
 		click.count += 1
 	} else {
 		click.count = 1
 	}
 
-	click.id = Id
+	click.id = Element
 	click.time = time.Total
 	click.pos = pos
 }
@@ -232,7 +229,7 @@ interaction_begin :: proc() #no_bounds_check {
 // next_focus returns the next focusable element after `Current` in declaration order, or 0
 // when none exists. `Back` walks the order backwards, and the walk wraps around.
 @(private)
-next_focus :: proc(Current: Id, Back: bool) -> Id {
+next_focus :: proc(Current: ElementId, Back: bool) -> ElementId {
 	count := len(state.nodes)
 	if count == 0 do return 0
 
