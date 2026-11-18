@@ -50,8 +50,8 @@ prev_at :: proc(i: u32) -> Placement #no_bounds_check {
 }
 
 Node :: struct {
-	config:       LayoutConfig,
-	style:        Style,
+	config:       ContainerConfig,
+	style:        BoxStyle,
 	direction:    Direction,
 	floating:     bool,
 	base:         Vec2,
@@ -76,28 +76,37 @@ TextContent :: struct {
 	lines: []Line,
 }
 
-// ImageContent is a leaf that paints `handle` over its rect, tinted by `config`. The
-// host owns the texture and keeps it alive while the handle is in use.
+// ImageContent is a leaf that paints `handle` over its rect, multiplied by `tint`. The host owns
+// the texture and keeps it alive while the handle is in use.
 ImageContent :: struct {
 	handle: Texture,
-	config: ImageConfig
+	tint:   Color,
+	fit:    ImageFit,
 }
 
-// PaintProc is the custom draw leaf: a callback the host supplies, run once the rect is
-// known. It is the content variant a widget uses when text and image do not fit.
-PaintProc :: #type proc(Rect: Rect, List: ^DrawList, Element: ElementId)
+// CustomProc is the leaf whose look comes from the host: a callback run once the rect is known.
+// `User` points at the copy of the value the leaf declared, or is nil when it declared none.
+CustomProc :: #type proc(Rect: Rect, List: ^DrawList, Element: ElementId, User: rawptr)
+
+// CustomContent is a CustomProc and where its user value sits in the frame buffer. The leaf copies
+// the value, so it outlives the call that declared it, and the size is whatever the value needs.
+CustomContent :: struct {
+	Fn:     CustomProc,
+	Offset: u32,
+	Size:   u32,
+}
 
 Content :: union {
 	TextContent,
 	ImageContent,
-	PaintProc,
+	CustomContent,
 }
 
 // A layout axis is a ScrollAxis: Horizontal is X and Vertical is Y. A Row lays its
 // children out along X and a Column along Y, and the other axis is the cross axis.
 
 @(private="file")
-sizing_of :: #force_inline proc(c: LayoutConfig, A: ScrollAxis) -> Sizing {
+sizing_of :: #force_inline proc(c: ContainerConfig, A: ScrollAxis) -> Sizing {
 	return c.Width if A == .Horizontal else c.Height
 }
 
@@ -316,7 +325,7 @@ measure_width :: proc() #no_bounds_check {
 		switch &content in n.content {
 		case TextContent:
 			n.content_size, content.lines = label_measure(content, 0)
-		case PaintProc:
+		case CustomContent:
 		case ImageContent:
 			n.content_size = {
 				content.handle.Width  / state.screen.dpi,
@@ -378,7 +387,7 @@ measure_height :: proc() #no_bounds_check {
 				n.content_size, content.lines = label_measure(content, max(n.rect.w - inset(&n).x, 0))
 			}
 		case ImageContent:
-		case PaintProc:
+		case CustomContent:
 		case:
 			sum, tallest: f32
 			count := 0

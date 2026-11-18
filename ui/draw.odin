@@ -254,7 +254,7 @@ draw_node :: proc(i: u32) #no_bounds_check {
 	clip := n.config.Clip || scrolls(n, .Vertical) || scrolls(n, .Horizontal)
 	if clip do PushClipRect(&list, inner_rect(i, n.rect))
 
-	switch content in n.content {
+	switch &content in n.content {
 	case TextContent:
 		text_lines := content.lines
 		if len(text_lines) == 0 do break
@@ -283,10 +283,14 @@ draw_node :: proc(i: u32) #no_bounds_check {
 		inner := inner_rect(i, n.rect)
 		if !RectOverlaps(inner, list.clip) do break
 
-		rect, uv0, uv1 := fit_image(inner, {content.handle.Width, content.handle.Height}, content.config.Fit)
-		AddImage(&list, rect, content.handle, content.config.Tint, uv0, uv1)
-	case PaintProc:
-		if visible do content(n.rect, &list, n.id)
+		rect, uv0, uv1 := fit_image(inner, {content.handle.Width, content.handle.Height}, content.fit)
+		AddImage(&list, rect, content.handle, content.tint, uv0, uv1)
+	case CustomContent:
+		if visible {
+			user: rawptr
+			if content.Size > 0 do user = rawptr(&state.user_data[content.Offset])
+			content.Fn(n.rect, &list, n.id, user)
+		}
 	}
 
 	for c := i + 1; c < n.subtree_end; c = next_sibling(c) {

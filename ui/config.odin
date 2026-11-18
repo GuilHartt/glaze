@@ -49,9 +49,9 @@ Background :: union {
 	Gradient,
 }
 
-// Style is how a box paints itself. Any element carries one, leaf or container. Equal border
+// BoxStyle is how a box paints itself. Any element carries one, leaf or container. Equal border
 // sides keep the corner radius; sides that differ are painted as plain edges.
-Style :: struct {
+BoxStyle :: struct {
 	Background:   Background,
 	CornerRadius: CornerRadius,
 	BorderColor:  Color,
@@ -67,20 +67,26 @@ HitMode :: enum u8 {
 	Ignore,
 }
 
-// LayoutConfig is how an element is sized, how it places its children and how it answers the
+// ElementConfig is how an element is sized and painted into its box, and how it answers the
 // pointer and the keyboard. `Hit` decides whether the element is seen, observes or owns the
 // press; `Focusable` lets Tab and a click give it the focus.
-LayoutConfig :: struct {
+ElementConfig :: struct {
 	Width:     Sizing,
 	Height:    Sizing,
 	Pad:       Edges,
-	Gap:       f32,
-	Justify:   Justify,
-	Align:     Align,
 	Clip:      bool,
-	Scroll:    Scroll,
 	Hit:       HitMode,
 	Focusable: bool,
+}
+
+// ContainerConfig is how a container places its children: the element config it shares with
+// every leaf, plus the gap between children, their alignment and the scrolling.
+ContainerConfig :: struct {
+	using base: ElementConfig,
+	Gap:        f32,
+	Justify:    Justify,
+	Align:      Align,
+	Scroll:     Scroll,
 }
 
 // WrapMode is how a label breaks its text. Both modes break at the newlines the text has;
@@ -90,6 +96,18 @@ WrapMode :: enum u8 { None, Word }
 // TextAlign places each line inside the width the label ended up with.
 TextAlign :: enum u8 { Left, Center, Right }
 
+// LabelStyle is what a label paints: the box it sits in and the text inside. `Color` and `Size`
+// are optional because their default is not the zero value: omit them for white at 16, or pass
+// `{}` to mean zero.
+LabelStyle :: struct {
+	using Box: BoxStyle,
+	Color:     Maybe(Color),
+	Size:      Maybe(f32),
+	Font:      Font,
+	Wrap:      WrapMode,
+	Align:     TextAlign,
+}
+
 // ImageFit is how an image fills the rect it was given.
 ImageFit :: enum u8 {
 	Stretch,
@@ -97,11 +115,13 @@ ImageFit :: enum u8 {
 	Cover,
 }
 
-// ImageConfig is how an image leaf paints. `Tint` multiplies the texture and `Fit` is how
-// it fills the rect.
-ImageConfig :: struct {
-	Tint: Color,
-	Fit:  ImageFit,
+// ImageStyle is what an image leaf paints: the box it sits in, the tint that multiplies the
+// texture and how the texture fills the rect. `Tint` is optional because its default is opaque
+// white.
+ImageStyle :: struct {
+	using Box: BoxStyle,
+	Tint:      Maybe(Color),
+	Fit:       ImageFit,
 }
 
 // Corners returns a corner radius with `All` on every corner.
@@ -115,13 +135,13 @@ Edge :: proc{edge_all, edge_xy}
 
 // edge_all returns the edges with `All` on every side.
 @(private="file")
-edge_all :: #force_inline proc(All: f32) -> Edges {
+edge_all :: #force_inline proc "contextless" (All: f32) -> Edges {
 	return {Left = All, Right = All, Top = All, Bottom = All}
 }
 
 // edge_xy returns the edges with `X` on the left and right and `Y` on the top and bottom.
 @(private="file")
-edge_xy :: #force_inline proc(X, Y: f32) -> Edges {
+edge_xy :: #force_inline proc "contextless" (X, Y: f32) -> Edges {
 	return {Left = X, Right = X, Top = Y, Bottom = Y}
 }
 

@@ -89,6 +89,7 @@ State :: struct {
 	scopes:      [dynamic]Scope,
 	floats:      [dynamic]Float,
 	flexes:      [dynamic]Flex,
+	user_data:   [dynamic]u8,
 }
 
 @(private)

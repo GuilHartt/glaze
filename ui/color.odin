@@ -6,17 +6,17 @@ import "core:math"
 Color :: [4]u8
 
 // Hex returns the color of the 0xRRGGBB value `Rgb`, with `Alpha` as its alpha channel.
-Hex :: #force_inline proc(Rgb: u32, Alpha: u8 = 255) -> Color {
+Hex :: #force_inline proc "contextless" (Rgb: u32, Alpha: u8 = 255) -> Color {
 	return {u8(Rgb >> 16), u8(Rgb >> 8), u8(Rgb), Alpha}
 }
 
 // HexA returns the color of the 0xRRGGBBAA value `Rgba`.
-HexA :: #force_inline proc(Rgba: u32) -> Color {
+HexA :: #force_inline proc "contextless" (Rgba: u32) -> Color {
 	return {u8(Rgba >> 24), u8(Rgba >> 16), u8(Rgba >> 8), u8(Rgba)}
 }
 
 // Rgb returns the color of the `R`, `G` and `B` channels, with `Alpha` as its alpha channel.
-Rgb :: #force_inline proc(R, G, B: u8, Alpha: u8 = 255) -> Color {
+Rgb :: #force_inline proc "contextless" (R, G, B: u8, Alpha: u8 = 255) -> Color {
 	return {R, G, B, Alpha}
 }
 

@@ -219,37 +219,29 @@ points_box :: proc(Points: []Vec2) -> Rect {
 	return {lo.x, lo.y, hi.x - lo.x, hi.y - lo.y}
 }
 
-// path_clear drops the points accumulated so far.
-@(private="file")
-path_clear :: proc(List: ^DrawList) {
-	clear(&List.path)
-}
-
 // path_line_to appends `P` to the path, carrying `Tint`.
 @(private="file")
 path_line_to :: proc(List: ^DrawList, P: Vec2, Tint: Color) {
 	append(&List.path, PathPoint{pos = P, col = Tint})
 }
 
-// arc_segments returns how many segments hold `Sweep` radians of `Radius` within ARC_ERROR
-// pixels. A chord leaves a sagitta of radius * (1 - cos(step / 2)), so the step that keeps it
-// at the error is 2 * acos(1 - error / radius).
-@(private="file")
-arc_segments :: proc(List: ^DrawList, Radius, Sweep: f32) -> int {
-	pixels := Radius / max(List.fringe, 0.0001)
-	if pixels <= ARC_ERROR do return 2
-	step := 2 * math.acos(1 - ARC_ERROR / pixels)
-	return clamp(int(math.ceil(abs(Sweep) / step)), 2, ARC_SEGMENT_MAX)
-}
-
 // path_arc_to appends the points of an arc around `Center`, from `A0` to `A1` radians.
-// `Segments` of zero picks a count from the error ARC_ERROR allows.
+// `Segments` of zero picks the fewest points that hold the arc within ARC_ERROR pixels.
 @(private="file")
 path_arc_to :: proc(List: ^DrawList, Center: Vec2, Radius: f32, A0, A1: f32, Tint: Color, Segments: int = 0) {
 	if Radius <= 0 do return
 
 	n := Segments
-	if n <= 0 do n = arc_segments(List, Radius, A1 - A0)
+	if n <= 0 {
+		// A chord leaves a sagitta of radius * (1 - cos(step / 2)), so the step that keeps it at
+		// the error is 2 * acos(1 - error / radius).
+		pixels := Radius / max(List.fringe, 0.0001)
+		n = 2
+		if pixels > ARC_ERROR {
+			step := 2 * math.acos(1 - ARC_ERROR / pixels)
+			n = clamp(int(math.ceil(abs(A1 - A0) / step)), 2, ARC_SEGMENT_MAX)
+		}
+	}
 
 	// Step by rotating the radius vector, so the whole arc costs two sines and two cosines.
 	step := (A1 - A0) / f32(n)
@@ -357,7 +349,7 @@ quad_indices :: #force_inline proc(List: ^DrawList, A, B, C, D: u32) {
 path_fill_convex :: proc(List: ^DrawList) {
 	n := len(List.path)
 	if n < 3 {
-		path_clear(List)
+		clear(&List.path)
 		return
 	}
 
@@ -402,7 +394,7 @@ path_fill_convex :: proc(List: ^DrawList) {
 	}
 
 	mesh_command(List, u32(len(List.indices) - start))
-	path_clear(List)
+	clear(&List.path)
 }
 
 // path_stroke traces the path as a band `Thickness` wide, then clears it. Each point carries its
@@ -412,7 +404,7 @@ path_fill_convex :: proc(List: ^DrawList) {
 path_stroke :: proc(List: ^DrawList, Tint: Color, Thickness: f32 = 1, Closed: bool = true) {
 	n := len(List.path)
 	if n < 2 || Thickness <= 0 {
-		path_clear(List)
+		clear(&List.path)
 		return
 	}
 
@@ -463,7 +455,7 @@ path_stroke :: proc(List: ^DrawList, Tint: Color, Thickness: f32 = 1, Closed: bo
 	}
 
 	if count := len(List.indices) - start; count > 0 do mesh_command(List, u32(count))
-	path_clear(List)
+	clear(&List.path)
 }
 
 // regular_polygon fills `out` with the vertices of a regular polygon of `Sides` sides and

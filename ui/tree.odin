@@ -1,5 +1,7 @@
 package ui
 
+import "base:runtime"
+
 // Begin starts a new frame: it feeds the input, clears the node array and opens an implicit
 // root node sized to the viewport. Must be paired with End.
 Begin :: proc() {
@@ -10,6 +12,7 @@ Begin :: proc() {
 	clear(&state.nodes)
 	clear(&state.scopes)
 	clear(&state.floats)
+	clear(&state.user_data)
 	label_purge()
 	state.frame += 1
 	state.cursor = .Arrow
@@ -36,7 +39,7 @@ End :: proc() {
 // Open opens a new node and makes it the parent of everything declared until the matching
 // Close, with an id derived from its parent and position. Prefer Row/Column for the common
 // cases.
-Open :: proc(Config: LayoutConfig = {}, Style: Style = {}, Direction: Direction = .Row) -> ElementId {
+Open :: proc(Config: ContainerConfig = {}, Style: BoxStyle = {}, Direction: Direction = .Row) -> ElementId {
 	parent := &state.scopes[len(state.scopes)-1]
 	node_id := id_mix(parent.id, parent.count)
 	parent.count += 1
@@ -70,7 +73,7 @@ LastId :: proc() -> ElementId #no_bounds_check {
 
 // SetStyle replaces the style of the element `Element`, which must have been declared this frame.
 // Widgets use it to pick the visual of an interaction state after opening the element.
-SetStyle :: proc(Element: ElementId, Style: Style) {
+SetStyle :: proc(Element: ElementId, Style: BoxStyle) {
 	if i := node_of(Element); i != NO_NODE {
 		state.nodes[i].style = Style
 	} else {
@@ -119,7 +122,7 @@ PopId :: proc() {
 // Row opens a node that lays its children out left to right, as `if Row(...) { ... }`. The
 // node closes at the end of the block.
 @(require_results, deferred_none = Close)
-Row :: proc(Config: LayoutConfig = {}, Style: Style = {}) -> bool {
+Row :: proc(Config: ContainerConfig = {}, Style: BoxStyle = {}) -> bool {
 	Open(Config, Style, .Row)
 	return true
 }
@@ -127,7 +130,7 @@ Row :: proc(Config: LayoutConfig = {}, Style: Style = {}) -> bool {
 // Column opens a node that lays its children out top to bottom, as `if Column(...) { ... }`.
 // The node closes at the end of the block.
 @(require_results, deferred_none = Close)
-Column :: proc(Config: LayoutConfig = {}, Style: Style = {}) -> bool {
+Column :: proc(Config: ContainerConfig = {}, Style: BoxStyle = {}) -> bool {
 	Open(Config, Style, .Column)
 	return true
 }
@@ -175,8 +178,8 @@ Floating :: proc(
 	Anchor:    Anchor = AnchorKind.Parent,
 	Offset:    Vec2 = {},
 	Pivot:     Vec2 = {},
-	Config:    LayoutConfig = {},
-	Style:     Style = {},
+	Config:    ContainerConfig = {},
+	Style:     BoxStyle = {},
 	Direction: Direction = .Column,
 ) -> bool #no_bounds_check {
 	parent := current_parent()
@@ -192,67 +195,63 @@ Floating :: proc(
 	return true
 }
 
-// Label adds a text leaf and returns its id, so it can be the target of Hovered/Clicked. `Color`
-// and `Size` stay loose since a zero color is a real value; `Width`, `Height` and `Hit` describe
-// the box, and the rest paints it.
-Label :: proc(
-	Text:   cstring,
-	Width:  Sizing = {},
-	Height: Sizing = {},
-	Hit:    HitMode = .Auto,
-	Color:  Color = {255, 255, 255, 255},
-	Size:   f32 = 16,
-	Font:   Font = 0,
-	Wrap:   WrapMode = .None,
-	Align:  TextAlign = .Left,
-	Style:  Style = {},
-) -> ElementId #no_bounds_check {
-	node_id := Open({Width = Width, Height = Height, Hit = Hit}, Style)
+// Label adds a text leaf and returns its id, so it can be the target of Hovered/Clicked. `Config`
+// is the box, and `Style` paints it and the text inside.
+Label :: proc(Text: cstring, Config: ElementConfig = {}, Style: LabelStyle = {}) -> ElementId #no_bounds_check {
+	node_id := Open({base = Config}, Style.Box)
 	state.nodes[len(state.nodes)-1].content = TextContent{
 		text  = Text,
-		font  = Font,
-		color = Color,
-		size  = Size,
-		wrap  = Wrap,
-		align = Align,
+		font  = Style.Font,
+		color = Style.Color.? or_else {255, 255, 255, 255},
+		size  = Style.Size.? or_else 16,
+		wrap  = Style.Wrap,
+		align = Style.Align,
 	}
 	Close()
 	return node_id
 }
 
-// Image adds an image leaf and returns its id. `Width` and `Height` default to the texture
-// size, `Hit` is how the leaf answers the pointer, `Fit` how the texture fills the rect, and
-// `Style` paints the box.
-Image :: proc(
-	Handle: Texture,
-	Width:  Sizing = {},
-	Height: Sizing = {},
-	Hit:    HitMode = .Auto,
-	Tint:   Color = {255, 255, 255, 255},
-	Fit:    ImageFit = .Stretch,
-	Style:  Style = {},
-) -> ElementId #no_bounds_check {
-	node_id := Open({Width = Width, Height = Height, Hit = Hit}, Style)
+// Image adds an image leaf and returns its id. `Config` is the box, defaulting to the texture
+// size, and `Style` paints the box and the texture.
+Image :: proc(Handle: Texture, Config: ElementConfig = {}, Style: ImageStyle = {}) -> ElementId #no_bounds_check {
+	node_id := Open({base = Config}, Style.Box)
 	state.nodes[len(state.nodes)-1].content = ImageContent{
 		handle = Handle,
-		config = ImageConfig{Tint = Tint, Fit = Fit},
+		tint   = Style.Tint.? or_else {255, 255, 255, 255},
+		fit    = Style.Fit,
 	}
 	Close()
 	return node_id
 }
 
-// Paint adds a sized leaf whose painting is `Fn` and returns its id, so it needs no Row or
-// Column around it. `Hit` is how it answers the pointer, and the callback draws inside the rect
-// and emits only shapes.
-Paint :: proc(
-	Fn:     PaintProc,
-	Width:  Sizing = {Kind = .Fixed, Grow = 1},
-	Height: Sizing = {Kind = .Fixed, Grow = 1},
-	Hit:    HitMode = .Auto,
-	Style:  Style = {},
+// Custom adds a leaf whose look is `Fn` and returns its id, so it needs no Row or Column around
+// it. `Config` is the box, defaulting to fill the parent. `User` is a value copied into the frame
+// buffer, which the callback reads at draw time, so it may be a local of the declaring call.
+Custom :: proc(
+	Fn:     CustomProc,
+	Config: ElementConfig = {Width = {Kind = .Fixed, Grow = 1}, Height = {Kind = .Fixed, Grow = 1}},
+	Style:  BoxStyle = {},
+	User:   any = nil,
 ) -> ElementId #no_bounds_check {
-	node_id := Open({Width = Width, Height = Height, Hit = Hit}, Style)
-	state.nodes[len(state.nodes) - 1].content = Fn
+	// The buffer is a byte stream, so every value starts on the boundary the allocator already
+	// guarantees for the buffer itself.
+	ALIGN :: 16
+
+	node_id := Open({base = Config}, Style)
+	content := CustomContent{Fn = Fn}
+
+	if User != nil {
+		if size := int(runtime.type_info_base(type_info_of(User.id)).size); size > 0 {
+			if rem := len(state.user_data) % ALIGN; rem != 0 {
+				resize(&state.user_data, len(state.user_data) + ALIGN - rem)
+			}
+			content.Offset = u32(len(state.user_data))
+			content.Size = u32(size)
+			append(&state.user_data, ..([^]u8)(User.data)[:size])
+		}
+	}
+
+	state.nodes[len(state.nodes) - 1].content = content
 	Close()
 	return node_id
 }
