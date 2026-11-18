@@ -36,15 +36,19 @@ PathPoint :: struct {
 }
 
 // DrawList is the shape buffer of one frame. Shapes append in call order, so later calls
-// paint over earlier ones.
+// paint over earlier ones. `fringe` is one pixel in layout units, cached once per frame, and
+// `antialias` says whether shapes pay for the transparent edge that blends them.
 DrawList :: struct {
 	vertices:   [dynamic]Vertex,
 	indices:    [dynamic]u32,
 	commands:   [dynamic]DrawCommand,
 	path:       [dynamic]PathPoint,
+	offsets:    [dynamic]Vec2,
 	clip_stack: [dynamic]Rect,
 	clip:       Rect,
 	texture:    Texture,
+	antialias:  bool,
+	fringe:     f32,
 }
 
 // Frame is what a backend needs in order to draw one frame.
@@ -56,7 +60,13 @@ Frame :: struct {
 }
 
 @(private="file")
-list: DrawList
+list: DrawList = {antialias = true}
+
+// SetAntialias turns the blended edge of every shape on or off. It keeps its value across frames,
+// and a shape drawn without it is cheaper and keeps hard pixel edges.
+SetAntialias :: proc(Enabled: bool = true) {
+	list.antialias = Enabled
+}
 
 // DrawData returns the mesh and draw commands of the last completed frame. The slices are
 // only valid until the next call to Begin.
@@ -138,10 +148,12 @@ draw_begin_frame :: proc() {
 	clear(&list.indices)
 	clear(&list.commands)
 	clear(&list.path)
+	clear(&list.offsets)
 	clear(&list.clip_stack)
 	size := viewport_size()
 	list.clip = {0, 0, size.x, size.y}
 	list.texture = {}
+	list.fringe = 1 / effective_scale()
 }
 
 // draw_build walks the flow tree in paint order, then the floating layer in declaration order,

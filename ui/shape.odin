@@ -191,6 +191,14 @@ AddImageGradient :: proc(
 @(private="file")
 MAX_POLYGON_SIDES :: 64
 
+// ARC_SEGMENT_MAX caps how finely an arc is split, and ARC_ERROR is how far, in pixels, a chord
+// may sit from the arc it approximates.
+@(private="file")
+ARC_SEGMENT_MAX :: 96
+
+@(private="file")
+ARC_ERROR :: 0.10
+
 // path_gradient samples `Colors` at every point of the path, over `Box`.
 @(private="file")
 path_gradient :: proc(List: ^DrawList, Box: Rect, Colors: Gradient) {
@@ -223,21 +231,35 @@ path_line_to :: proc(List: ^DrawList, P: Vec2, Tint: Color) {
 	append(&List.path, PathPoint{pos = P, col = Tint})
 }
 
+// arc_segments returns how many segments hold `Sweep` radians of `Radius` within ARC_ERROR
+// pixels. A chord leaves a sagitta of radius * (1 - cos(step / 2)), so the step that keeps it
+// at the error is 2 * acos(1 - error / radius).
+@(private="file")
+arc_segments :: proc(List: ^DrawList, Radius, Sweep: f32) -> int {
+	pixels := Radius / max(List.fringe, 0.0001)
+	if pixels <= ARC_ERROR do return 2
+	step := 2 * math.acos(1 - ARC_ERROR / pixels)
+	return clamp(int(math.ceil(abs(Sweep) / step)), 2, ARC_SEGMENT_MAX)
+}
+
 // path_arc_to appends the points of an arc around `Center`, from `A0` to `A1` radians.
-// `Segments` of zero picks a count from the radius and the sweep.
+// `Segments` of zero picks a count from the error ARC_ERROR allows.
 @(private="file")
 path_arc_to :: proc(List: ^DrawList, Center: Vec2, Radius: f32, A0, A1: f32, Tint: Color, Segments: int = 0) {
 	if Radius <= 0 do return
 
 	n := Segments
-	if n <= 0 {
-		per_turn := clamp(int(Radius) + 8, 12, 96)
-		n = clamp(int(f32(per_turn) * abs(A1 - A0) / math.TAU), 2, 96)
-	}
+	if n <= 0 do n = arc_segments(List, Radius, A1 - A0)
 
-	for i in 0 ..= n {
-		angle := A0 + (A1 - A0) * f32(i) / f32(n)
-		path_line_to(List, {Center.x + math.cos(angle) * Radius, Center.y + math.sin(angle) * Radius}, Tint)
+	// Step by rotating the radius vector, so the whole arc costs two sines and two cosines.
+	step := (A1 - A0) / f32(n)
+	c, s := math.cos(step), math.sin(step)
+	x, y := math.cos(A0) * Radius, math.sin(A0) * Radius
+
+	reserve(&List.path, len(List.path) + n + 1)
+	for _ in 0 ..= n {
+		append(&List.path, PathPoint{pos = {Center.x + x, Center.y + y}, col = Tint})
+		x, y = x * c - y * s, x * s + y * c
 	}
 }
 
@@ -271,29 +293,121 @@ path_rect :: proc(List: ^DrawList, Rect: Rect, CornerRadius: CornerRadius, Tint:
 	path_corner(List, {x0 + bl, y1 - bl}, {x0, y1}, bl, half_pi, half_pi * 2, Tint)
 }
 
-// path_fill_convex fills the path as a fan from its first point, then clears it. The path
-// must be convex.
+// MITER_LIMIT is how far a joint may stretch past its point before the corner is cut short, and
+// MITER_MIN keeps the miter division finite on a doubled-back path.
+@(private="file")
+MITER_LIMIT :: 4
+
+@(private="file")
+MITER_MIN :: 0.0001
+
+// edge_normal returns the outward unit normal of the edge from `A` to `B`, for a path that winds
+// clockwise on a y-down screen. It is zero when the two points coincide.
+@(private="file")
+edge_normal :: #force_inline proc(A, B: Vec2) -> Vec2 {
+	d := B - A
+	length := math.sqrt(d.x * d.x + d.y * d.y)
+	if length <= 0 do return {}
+	return {d.y / length, -d.x / length}
+}
+
+// path_miter_normals fills `offsets` with the outward normal of every point, so a stroke edge and
+// a fill rim offset the path once instead of per edge. A sharp corner clamps the miter, so it
+// never spikes out of the shape.
+@(private="file")
+path_miter_normals :: proc(List: ^DrawList, Closed: bool) {
+	n := len(List.path)
+	clear(&List.offsets)
+	reserve(&List.offsets, n)
+
+	for i in 0 ..< n {
+		prev := (i - 1 + n) % n
+		next := (i + 1) % n
+
+		first_edge := Closed || i > 0
+		last_edge := Closed || i < n - 1
+
+		n_in, n_out: Vec2
+		if first_edge do n_in = edge_normal(List.path[prev].pos, List.path[i].pos)
+		if last_edge do n_out = edge_normal(List.path[i].pos, List.path[next].pos)
+		if !first_edge do n_in = n_out
+		if !last_edge do n_out = n_in
+
+		s := n_in + n_out
+		d := 1 + n_in.x * n_out.x + n_in.y * n_out.y
+		if d < MITER_MIN do d = MITER_MIN
+		m := s / d
+
+		length := math.sqrt(m.x * m.x + m.y * m.y)
+		if length > MITER_LIMIT do m = m * (MITER_LIMIT / length)
+		append(&List.offsets, m)
+	}
+}
+
+// quad_indices appends the two triangles of a quad from its four corners in order.
+@(private="file")
+quad_indices :: #force_inline proc(List: ^DrawList, A, B, C, D: u32) {
+	append(&List.indices, A, B, C, A, C, D)
+}
+
+// path_fill_convex fills the path as a fan from its first point, then clears it. The path must
+// be convex. With antialiasing on, a ring of transparent vertices wraps the fill, so the edge
+// blends instead of stair-stepping and neighbouring fills still meet with no seam.
 @(private="file")
 path_fill_convex :: proc(List: ^DrawList) {
 	n := len(List.path)
-	if n >= 3 {
-		uv := use_atlas(List)
-		start := len(List.indices)
-		vtx := u32(len(List.vertices))
+	if n < 3 {
+		path_clear(List)
+		return
+	}
+
+	uv := use_atlas(List)
+	start := len(List.indices)
+	base := u32(len(List.vertices))
+	feather: f32
+	if List.antialias do feather = List.fringe
+
+	if feather <= 0 {
+		reserve(&List.vertices, len(List.vertices) + n)
+		reserve(&List.indices, len(List.indices) + (n - 2) * 3)
 
 		for p in List.path do append(&List.vertices, Vertex{Pos = p.pos, UV = uv, Color = p.col})
 		for i in 1 ..< n - 1 {
-			append(&List.indices, vtx)
-			append(&List.indices, vtx + u32(i))
-			append(&List.indices, vtx + u32(i + 1))
+			append(&List.indices, base, base + u32(i), base + u32(i + 1))
+		}
+	} else {
+		path_miter_normals(List, true)
+		reserve(&List.vertices, len(List.vertices) + n * 2)
+		reserve(&List.indices, len(List.indices) + (n - 2) * 3 + n * 6)
+
+		// The rim grows outward, so the fill keeps its declared size and two fills that share an
+		// edge leave no background showing through the seam.
+		for p in List.path {
+			append(&List.vertices, Vertex{Pos = p.pos, UV = uv, Color = p.col})
+		}
+		for p, i in List.path {
+			edge := p.col
+			edge.a = 0
+			append(&List.vertices, Vertex{Pos = p.pos + List.offsets[i] * feather, UV = uv, Color = edge})
 		}
 
-		mesh_command(List, u32(len(List.indices) - start))
+		outer := base + u32(n)
+		for i in 1 ..< n - 1 {
+			append(&List.indices, base, base + u32(i), base + u32(i + 1))
+		}
+		for i in 0 ..< n {
+			j := u32((i + 1) % n)
+			quad_indices(List, base + u32(i), outer + u32(i), outer + j, base + j)
+		}
 	}
+
+	mesh_command(List, u32(len(List.indices) - start))
 	path_clear(List)
 }
 
-// path_stroke traces the path as a band `Thickness` wide, then clears it.
+// path_stroke traces the path as a band `Thickness` wide, then clears it. Each point carries its
+// own vertices, so a join is a miter and the edges share them instead of repeating a bevelled
+// quad per segment.
 @(private="file")
 path_stroke :: proc(List: ^DrawList, Tint: Color, Thickness: f32 = 1, Closed: bool = true) {
 	n := len(List.path)
@@ -304,55 +418,52 @@ path_stroke :: proc(List: ^DrawList, Tint: Color, Thickness: f32 = 1, Closed: bo
 
 	uv := use_atlas(List)
 	half := Thickness / 2
-	edges := n if Closed else n - 1
+	feather: f32
+	if List.antialias do feather = List.fringe
+
+	// The fringe adds a pixel past the edge on each side, so the body keeps the width it was
+	// declared with and the blend has a whole pixel to fall across.
+	outer := half + feather
+
+	path_miter_normals(List, Closed)
+
+	stride := 4 if feather > 0 else 2
 	start := len(List.indices)
+	base := u32(len(List.vertices))
+	reserve(&List.vertices, len(List.vertices) + n * stride)
+	reserve(&List.indices, len(List.indices) + n * stride * 3)
 
-	for i in 0 ..< edges {
-		a := List.path[i]
-		b := List.path[(i + 1) % n]
+	faded := Tint
+	faded.a = 0
 
-		d := b.pos - a.pos
-		length := math.sqrt(d.x * d.x + d.y * d.y)
-		if length <= 0 do continue
-
-		if Closed || i > 0 {
-			add_bevel(List, List.path[(i - 1 + n) % n], a, b, half, Tint, uv)
+	for p, i in List.path {
+		m := List.offsets[i]
+		if feather > 0 {
+			append(&List.vertices, Vertex{Pos = p.pos + m * outer, UV = uv, Color = faded})
 		}
+		append(&List.vertices, Vertex{Pos = p.pos + m * half, UV = uv, Color = Tint})
+		append(&List.vertices, Vertex{Pos = p.pos - m * half, UV = uv, Color = Tint})
+		if feather > 0 {
+			append(&List.vertices, Vertex{Pos = p.pos - m * outer, UV = uv, Color = faded})
+		}
+	}
 
-		normal := Vec2{-d.y / length * half, d.x / length * half}
-		append_band(
-			List,
-			{a.pos + normal, Tint},
-			{b.pos + normal, Tint},
-			{b.pos - normal, Tint},
-			{a.pos - normal, Tint},
-			uv,
-		)
+	edges := n if Closed else n - 1
+	for i in 0 ..< edges {
+		j := (i + 1) % n
+		a := base + u32(i * stride)
+		b := base + u32(j * stride)
+		if feather > 0 {
+			quad_indices(List, a, a + 1, b + 1, b)
+			quad_indices(List, a + 1, a + 2, b + 2, b + 1)
+			quad_indices(List, a + 2, a + 3, b + 3, b + 2)
+		} else {
+			quad_indices(List, a, a + 1, b + 1, b)
+		}
 	}
 
 	if count := len(List.indices) - start; count > 0 do mesh_command(List, u32(count))
 	path_clear(List)
-}
-
-// add_bevel fills the wedge outside `At`, between the edges into it and out of it. It is
-// the cheapest join and leaves a flat corner.
-@(private="file")
-add_bevel :: proc(List: ^DrawList, Prev, At, Next: PathPoint, Half: f32, Tint: Color, UV: Vec2) {
-	din := At.pos - Prev.pos
-	dout := Next.pos - At.pos
-	din_len := math.sqrt(din.x * din.x + din.y * din.y)
-	dout_len := math.sqrt(dout.x * dout.x + dout.y * dout.y)
-	if din_len <= 0 || dout_len <= 0 do return
-
-	cross := din.x * dout.y - din.y * dout.x
-	if cross == 0 do return
-
-	din_n := Vec2{-din.y, din.x} / din_len * Half
-	dout_n := Vec2{-dout.y, dout.x} / dout_len * Half
-	side: f32 = 1
-	if cross > 0 do side = -1
-
-	append_triangle(List, {At.pos + din_n * side, Tint}, {At.pos + dout_n * side, Tint}, {At.pos, Tint}, UV)
 }
 
 // regular_polygon fills `out` with the vertices of a regular polygon of `Sides` sides and
@@ -376,40 +487,6 @@ regular_polygon :: proc(out: []Vec2, Sides: int, Center: Vec2, Radius: f32, Star
 use_atlas :: #force_inline proc(List: ^DrawList) -> Vec2 {
 	List.texture = atlas_texture
 	return {0.5 / f32(font_ctx.width), 0.5 / f32(font_ctx.height)}
-}
-
-// append_triangle writes one colored triangle sampling the atlas white texel. The caller
-// closes the command.
-@(private="file")
-append_triangle :: proc(List: ^DrawList, A, B, C: PathPoint, UV: Vec2) {
-	vtx := u32(len(List.vertices))
-
-	append(&List.vertices, Vertex{Pos = A.pos, UV = UV, Color = A.col})
-	append(&List.vertices, Vertex{Pos = B.pos, UV = UV, Color = B.col})
-	append(&List.vertices, Vertex{Pos = C.pos, UV = UV, Color = C.col})
-
-	append(&List.indices, vtx + 0)
-	append(&List.indices, vtx + 1)
-	append(&List.indices, vtx + 2)
-}
-
-// append_band writes the two triangles of one quad from the four corners in order, so a
-// stroke edge costs four vertices instead of six.
-@(private="file")
-append_band :: proc(List: ^DrawList, A, B, C, D: PathPoint, UV: Vec2) {
-	vtx := u32(len(List.vertices))
-
-	append(&List.vertices, Vertex{Pos = A.pos, UV = UV, Color = A.col})
-	append(&List.vertices, Vertex{Pos = B.pos, UV = UV, Color = B.col})
-	append(&List.vertices, Vertex{Pos = C.pos, UV = UV, Color = C.col})
-	append(&List.vertices, Vertex{Pos = D.pos, UV = UV, Color = D.col})
-
-	append(&List.indices, vtx + 0)
-	append(&List.indices, vtx + 1)
-	append(&List.indices, vtx + 2)
-	append(&List.indices, vtx + 0)
-	append(&List.indices, vtx + 2)
-	append(&List.indices, vtx + 3)
 }
 
 // append_quad writes four vertices and six indices for a textured quad, and closes its own
