@@ -44,6 +44,16 @@ CursorIcon :: enum u8 {
 	NotAllowed,
 }
 
+// KEY_REPEAT_DELAY and KEY_REPEAT_RATE are the defaults for how long a key is held before it
+// starts repeating and the interval between repeats, both in seconds. The engine owns the
+// mechanism; an application may change the values with SetKeyRepeat, and a backend never repeats
+// a key itself.
+@(private)
+KEY_REPEAT_DELAY :: 0.40
+
+@(private)
+KEY_REPEAT_RATE :: 0.05
+
 // Input holds the input state for the current frame. The backend fills it through the Add*
 // procedures and widgets read it through the query procedures.
 @(private)
@@ -55,6 +65,10 @@ Input :: struct {
 	PrevButtons: [MouseButton]bool,
 	Keys:        bit_set[Key],
 	PrevKeys:    bit_set[Key],
+	RepeatWait:  [Key]f32, // seconds until a held key repeats again
+
+	RepeatDelay: f32,
+	RepeatRate:  f32,
 	Text:        [dynamic]u8,
 
 	ClipboardGet:  proc(User: rawptr) -> cstring,
@@ -63,7 +77,7 @@ Input :: struct {
 }
 
 @(private)
-input: Input
+input: Input = {RepeatDelay = KEY_REPEAT_DELAY, RepeatRate = KEY_REPEAT_RATE}
 
 // input_end_frame snapshots the current state for the next frame's edge queries and clears the
 // per-frame accumulators. Called by End.
@@ -73,6 +87,13 @@ input_end_frame :: proc() {
 	input.PrevButtons = input.Buttons
 	input.PrevKeys = input.Keys
 	input.Wheel = 0
+
+	for key in input.Keys {
+		if wait := &input.RepeatWait[key]; wait^ > 0 {
+			wait^ = max(wait^ - time.Delta, 0)
+		}
+	}
+
 	clear(&input.Text)
 	append(&input.Text, 0)
 }
@@ -123,9 +144,29 @@ KeyDown :: proc(Key: Key) -> bool {
 	return Key in input.Keys
 }
 
-// KeyPressed reports whether `Key` went down this frame.
-KeyPressed :: proc(Key: Key) -> bool {
-	return Key in input.Keys && Key not_in input.PrevKeys
+// KeyPressed reports whether `Key` went down this frame. With `Repeat`, a held key also answers
+// after KEY_REPEAT_DELAY and then every KEY_REPEAT_RATE, which is what a slider needs to move
+// while an arrow stays down.
+KeyPressed :: proc(Key: Key, Repeat := false) -> bool {
+	if Key not_in input.Keys do return false
+	if Key not_in input.PrevKeys do return true
+	if !Repeat do return false
+
+	wait := &input.RepeatWait[Key]
+	if wait^ > 0 do return false
+	wait^ = input.RepeatRate
+	return true
+}
+
+// SetKeyRepeat sets how long a key is held before it starts repeating and the interval between
+// repeats, both in seconds, for the queries that ask for repeat. Both must be positive.
+SetKeyRepeat :: proc(Delay, Rate: f32) {
+	if Delay <= 0 || Rate <= 0 {
+		report("ui: key repeat values must be positive")
+		return
+	}
+	input.RepeatDelay = Delay
+	input.RepeatRate = Rate
 }
 
 // KeyReleased reports whether `Key` went up this frame.
@@ -175,12 +216,16 @@ AddMouseButton :: proc(Button: MouseButton, Down: bool) { input.Buttons[Button] 
 // AddMouseWheel feeds a wheel delta. Multiple calls in a frame accumulate.
 AddMouseWheel :: proc(Delta: Vec2) { input.Wheel += Delta }
 
-// AddKey feeds a key transition. Call it on every press and release.
+// AddKey feeds a key transition, or the held state of a key the backend polls. The engine builds
+// key repeat from the held state and the frame delta, so a backend reports what the system gives
+// it and never repeats a key itself.
 AddKey :: proc(Key: Key, Down: bool) {
 	if Down {
+		if Key not_in input.Keys do input.RepeatWait[Key] = input.RepeatDelay
 		input.Keys += {Key}
 	} else {
 		input.Keys -= {Key}
+		input.RepeatWait[Key] = 0
 	}
 }
 

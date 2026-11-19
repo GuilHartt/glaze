@@ -64,6 +64,7 @@ Theme :: struct {
 	using common: ThemeCommon,
 	Button:       ButtonStyle,
 	Checkbox:     CheckboxStyle,
+	Slider:       SliderStyle,
 }
 
 // DefaultTheme returns the built-in dark theme, with every widget default derived from its
@@ -104,6 +105,34 @@ DefaultTheme :: proc() -> Theme {
 		},
 		Box = value.Metric[.FontSize],
 		Gap = value.Metric[.Gap],
+	}
+	value.Slider = {
+		Track = {
+			.Normal   = value.Color[.SurfacePressed],
+			.Hovered  = value.Color[.SurfacePressed],
+			.Pressed  = value.Color[.SurfacePressed],
+			.Focused  = value.Color[.SurfacePressed],
+			.Disabled = value.Color[.SurfaceDisabled],
+		},
+		Fill = {
+			.Normal   = value.Color[.Accent],
+			.Hovered  = value.Color[.Accent],
+			.Pressed  = value.Color[.Accent],
+			.Focused  = value.Color[.Accent],
+			.Disabled = value.Color[.Muted],
+		},
+		Knob = {
+			.Normal   = value.Color[.Text],
+			.Hovered  = value.Color[.Text],
+			.Pressed  = ui.Hex(0xFFFFFF),
+			.Focused  = value.Color[.Text],
+			.Disabled = value.Color[.Muted],
+		},
+		Ring        = value.Color[.Focus],
+		Height      = 24,
+		TrackHeight = 4,
+		KnobRadius  = 7,
+		Gap         = 4,
 	}
 	return value
 }
