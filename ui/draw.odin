@@ -114,9 +114,10 @@ AddText :: proc(List: ^DrawList, Pos: Vec2, Text: cstring, Tint: Color, Font: Fo
 }
 
 // add_text_run appends a run that needs no terminator, so a wrapped line is drawn as the
-// slice of the source it already is.
+// slice of the source it already is. `Extra` is the space a justified line adds after each
+// space, in layout units.
 @(private="file")
-add_text_run :: proc(List: ^DrawList, Pos: Vec2, Run: string, Tint: Color, Font: Font, Size: f32) {
+add_text_run :: proc(List: ^DrawList, Pos: Vec2, Run: string, Tint: Color, Font: Font, Size: f32, Extra: f32 = 0) {
 	if len(Run) == 0 || len(font_ctx.fonts) == 0 || Size <= 0 do return
 
 	scale := effective_scale()
@@ -130,12 +131,14 @@ add_text_run :: proc(List: ^DrawList, Pos: Vec2, Run: string, Tint: Color, Font:
 
 	iter := fontstash.TextIterInit(&font_ctx, Pos.x * scale, Pos.y * scale, Run)
 	quad: fontstash.Quad
+	pen: f32
 	for fontstash.TextIterNext(&font_ctx, &iter, &quad) {
 		append_quad(
 			List,
-			quad.x0 / scale, quad.y0 / scale, quad.x1 / scale, quad.y1 / scale,
+			quad.x0 / scale + pen, quad.y0 / scale, quad.x1 / scale + pen, quad.y1 / scale,
 			{quad.s0, quad.t0}, {quad.s1, quad.t1}, Tint,
 		)
+		if Extra != 0 && iter.codepoint == ' ' do pen += Extra
 	}
 
 	List.texture = previous
@@ -264,20 +267,54 @@ draw_node :: proc(i: u32) #no_bounds_check {
 		if !RectOverlaps(painted, list.clip) do break
 
 		line_height := n.content_size.y / f32(len(text_lines))
+		top := inner.y
+		if inner.h > n.content_size.y {
+			#partial switch content.valign {
+			case .Center: top += (inner.h - n.content_size.y) / 2
+			case .Bottom: top += inner.h - n.content_size.y
+			}
+		}
+
 		for line, index in text_lines {
 			x := inner.x
+			extra: f32
+			width := line.Width
 			#partial switch content.align {
-			case .Center: x += max((inner.w - line.Width) / 2, 0)
-			case .Right:  x += max(inner.w - line.Width, 0)
+			case .Center:
+				x += max((inner.w - line.Width) / 2, 0)
+			case .Right:
+				x += max(inner.w - line.Width, 0)
+			case .Justify:
+				source := string(content.text)
+				if !line.Truncated && line.Width < inner.w && line.End < u32(len(source)) && source[line.End] != '\n' {
+					spaces := 0
+					for c in source[line.Start:line.End] {
+						if c == ' ' do spaces += 1
+					}
+					if spaces > 0 {
+						extra = (inner.w - line.Width) / f32(spaces)
+						width = inner.w
+					}
+				}
 			}
+
+			y := top + line_height * f32(index)
+			if !RectOverlaps({x, y, width, line_height}, list.clip) do continue
+
 			add_text_run(
 				&list,
-				{x, inner.y + line_height * f32(index)},
+				{x, y},
 				string(content.text)[line.Start:line.End],
 				content.color,
 				content.font,
 				content.size,
+				extra,
 			)
+
+			if line.Truncated && content.ellipsis {
+				tail := MeasureText(ELLIPSIS, content.font, content.size).x
+				add_text_run(&list, {x + width - tail, y}, ELLIPSIS, content.color, content.font, content.size)
+			}
 		}
 	case ImageContent:
 		inner := inner_rect(i, n.rect)

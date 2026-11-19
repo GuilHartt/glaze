@@ -93,19 +93,26 @@ ContainerConfig :: struct {
 // `Word` also breaks between words when a line does not fit the width it was given.
 WrapMode :: enum u8 { None, Word }
 
-// TextAlign places each line inside the width the label ended up with.
-TextAlign :: enum u8 { Left, Center, Right }
+// TextAlign places each line inside the width the label ended up with. `Justify` stretches
+// the spaces between words, leaving the last line of each paragraph as it is.
+TextAlign :: enum u8 { Left, Center, Right, Justify }
+
+// VerticalAlign places the block of lines inside the height the label ended up with.
+VerticalAlign :: enum u8 { Top, Center, Bottom }
 
 // LabelStyle is what a label paints: the box it sits in and the text inside. `Color` and `Size`
-// are optional because their default is not the zero value: omit them for white at 16, or pass
-// `{}` to mean zero.
+// are optional: omit them for white at 16, and pass `{}` to mean zero. `MaxLines` cuts the text
+// at a line limit, and `Ellipsis` ends the cut line with `…`.
 LabelStyle :: struct {
-	using Box: BoxStyle,
-	Color:     Maybe(Color),
-	Size:      Maybe(f32),
-	Font:      Font,
-	Wrap:      WrapMode,
-	Align:     TextAlign,
+	using Box:     BoxStyle,
+	Color:         Maybe(Color),
+	Size:          Maybe(f32),
+	Font:          Font,
+	Wrap:          WrapMode,
+	MaxLines:      u16,
+	Ellipsis:      bool,
+	TextAlign:     TextAlign,
+	VerticalAlign: VerticalAlign,
 }
 
 // ImageFit is how an image fills the rect it was given.

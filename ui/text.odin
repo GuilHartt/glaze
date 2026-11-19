@@ -4,12 +4,17 @@ package ui
 import "core:strings"
 import "vendor:fontstash"
 
-// Line is one wrapped line: the byte range it covers in the source and the width it takes
-// in layout units.
+// Line is one wrapped line: the byte range it covers in the source, the width it takes in
+// layout units, and whether the text was cut there.
 Line :: struct {
 	Start, End: u32,
 	Width:      f32,
+	Truncated:  bool,
 }
+
+// ELLIPSIS ends a line the text was cut on.
+@(private)
+ELLIPSIS :: "…"
 
 // lines is the scratch the wrap writes into, so a frame reuses its capacity.
 @(private) lines: [dynamic]Line
@@ -17,17 +22,19 @@ Line :: struct {
 // stale is the scratch the purge collects keys in before deleting them.
 @(private="file") stale: [dynamic]LabelKey
 
-// LabelKey is what a wrapped result depends on: the words, and the font, size, mode, width
-// and scale they were broken for. Text that matches shares one entry, and the cache owns a
-// copy of `text`, so a key outlives the caller's buffer.
+// LabelKey is what a wrapped result depends on: the words, and the font, size, mode, width,
+// line limit, ellipsis and scale they were broken for. Text that matches shares one entry, and
+// the cache owns a copy of `text`, so a key outlives the caller's buffer.
 @(private="file")
 LabelKey :: struct {
-	text:  string,
-	font:  Font,
-	size:  f32,
-	mode:  WrapMode,
-	width: f32,
-	scale: f32,
+	text:     string,
+	font:     Font,
+	size:     f32,
+	mode:     WrapMode,
+	width:    f32,
+	maxLines: u16,
+	ellipsis: bool,
+	scale:    f32,
 }
 
 // LabelCache is the wrapped layout of one text. `frame` is what the purge reads to drop the
@@ -43,9 +50,18 @@ LabelCache :: struct {
 label_cache: map[LabelKey]LabelCache
 
 // WrapText breaks `Text` into lines according to `Mode`, measuring with `Font` at `Size`. A
-// line is a byte range in the source, so no text is copied, and the result is valid until
-// the next call. Every mode breaks at the newlines, and only `Word` breaks by `MaxWidth`.
-WrapText :: proc(Text: cstring, Font: Font, Size: f32, Mode: WrapMode, MaxWidth: f32) -> []Line {
+// line is a byte range in the source, so no text is copied, and the result is valid until the
+// next call. Only `Word` breaks by `MaxWidth`; `MaxLines` stops the text and `Ellipsis` marks
+// the line it stopped on.
+WrapText :: proc(
+	Text: cstring,
+	Font: Font,
+	Size: f32,
+	Mode: WrapMode,
+	MaxWidth: f32,
+	MaxLines: u16 = 0,
+	Ellipsis: bool = false,
+) -> []Line {
 	clear(&lines)
 	if Text == nil || Size <= 0 do return lines[:]
 
@@ -55,19 +71,38 @@ WrapText :: proc(Text: cstring, Font: Font, Size: f32, Mode: WrapMode, MaxWidth:
 
 	src, space := string(Text), measure(" ")
 	limit := MaxWidth * scale if Mode == .Word else f32(0)
+
+	// Without a width there is nothing to cut against, so an intrinsic measurement keeps the
+	// whole text.
+	cap := MaxLines if MaxWidth > 0 else u16(0)
+
 	start: int
 	for i in 0 ..= len(src) {
 		if i < len(src) && src[i] != '\n' do continue
-		wrap_paragraph(src[start:i], start, limit, space, scale)
+		wrap_paragraph(src[start:i], start, limit, space, scale, cap)
 		start = i + 1
+		if cap > 0 && len(lines) > int(cap) do break
+	}
+
+	if MaxLines > 0 && len(lines) > int(MaxLines) && MaxWidth > 0 {
+		resize(&lines, int(MaxLines))
+		cut(&lines[len(lines) - 1], src, MaxWidth * scale, space, scale, Ellipsis)
 	}
 	return lines[:]
 }
 
 // MeasureTextWrapped returns the block size `Text` occupies when wrapped to `Width`, in layout
 // units: the widest line by the stacked line height.
-MeasureTextWrapped :: proc(Text: cstring, Font: Font, Size: f32, Mode: WrapMode, Width: f32) -> Vec2 {
-	broken := WrapText(Text, Font, Size, Mode, Width)
+MeasureTextWrapped :: proc(
+	Text: cstring,
+	Font: Font,
+	Size: f32,
+	Mode: WrapMode,
+	Width: f32,
+	MaxLines: u16 = 0,
+	Ellipsis: bool = false,
+) -> Vec2 {
+	broken := WrapText(Text, Font, Size, Mode, Width, MaxLines, Ellipsis)
 	widest: f32
 	for line in broken do widest = max(widest, line.Width)
 	return {widest, MeasureText("", Font, Size).y * f32(len(broken))}
@@ -86,12 +121,14 @@ label_measure :: proc(Content: TextContent, Width: f32) -> (block: Vec2, broken:
 @(private="file")
 cached_label :: proc(Content: TextContent, Width: f32) -> ^LabelCache {
 	key := LabelKey{
-		text  = string(Content.text),
-		font  = Content.font,
-		size  = Content.size,
-		mode  = Content.wrap,
-		width = Width,
-		scale = effective_scale(),
+		text     = string(Content.text),
+		font     = Content.font,
+		size     = Content.size,
+		mode     = Content.wrap,
+		width    = Width,
+		maxLines = Content.max_lines,
+		ellipsis = Content.ellipsis,
+		scale    = effective_scale(),
 	}
 
 	if cached, ok := &label_cache[key]; ok {
@@ -129,26 +166,61 @@ label_purge :: proc() {
 @(private="file")
 wrap_block :: proc(Content: TextContent, Width: f32) -> Vec2 {
 	width: f32
-	for line in WrapText(Content.text, Content.font, Content.size, Content.wrap, Width) {
+	for line in WrapText(Content.text, Content.font, Content.size, Content.wrap, Width, Content.max_lines, Content.ellipsis) {
 		width = max(width, line.Width)
 	}
 	height := MeasureText("", Content.font, Content.size).y * f32(len(lines))
 	return {width, height}
 }
 
-// wrap_paragraph appends the lines of one paragraph, which holds no newline, and never
-// splits a word: one wider than the line overflows it, which is what the web does.
+// cut shortens `line` to fit `MaxWidth` with the ellipsis, landing between words.
 @(private="file")
-wrap_paragraph :: proc(P: string, Offset: int, MaxWidth, Space: f32, Scale: f32) {
+cut :: proc(line: ^Line, Source: string, MaxWidth, Space, Scale: f32, Ellipsis: bool) {
+	line.Truncated = true
+	if !Ellipsis do return
+
+	room, tail := MaxWidth, measure(ELLIPSIS)
+	room -= tail
+
+	// A paragraph end, or no width to break against, keeps its words and only gains the mark.
+	if room <= 0 || line.Width*Scale <= room {
+		line.Width = (line.Width*Scale + tail) / Scale
+		return
+	}
+
+	start := int(line.Start)
+	cursor, fit, width := start, start, f32(0)
+
+	for cursor < len(Source) && Source[cursor] != '\n' {
+		end := cursor
+		for end < len(Source) && Source[end] != ' ' && Source[end] != '\n' do end += 1
+
+		w := measure(Source[cursor:end])
+		gap := Space if fit > start else 0
+		if fit > start && width + gap + w > room do break
+
+		width += gap + w
+		fit = end
+		cursor = end + 1
+	}
+
+	line.End, line.Width = u32(fit), (width + tail) / Scale
+}
+
+// wrap_paragraph appends the lines of one paragraph, which holds no newline, and never
+// splits a word: one wider than the line overflows it, which is what the web does. It stops a
+// line past `MaxLines`.
+@(private="file")
+wrap_paragraph :: proc(P: string, Offset: int, MaxWidth, Space: f32, Scale: f32, MaxLines: u16) {
 	if len(P) == 0 {
-		append(&lines, Line{u32(Offset), u32(Offset), 0})
+		append(&lines, Line{u32(Offset), u32(Offset), 0, false})
 		return
 	}
 
 	// The whole paragraph fitting is the common case, and it costs one measurement.
 	width := measure(P)
 	if MaxWidth <= 0 || width <= MaxWidth {
-		append(&lines, Line{u32(Offset), u32(Offset + len(P)), width / Scale})
+		append(&lines, Line{u32(Offset), u32(Offset + len(P)), width / Scale, false})
 		return
 	}
 
@@ -169,7 +241,9 @@ wrap_paragraph :: proc(P: string, Offset: int, MaxWidth, Space: f32, Scale: f32)
 			cursor = end + 1
 		}
 
-		append(&lines, Line{u32(Offset + start), u32(Offset + fit), line / Scale})
+		append(&lines, Line{u32(Offset + start), u32(Offset + fit), line / Scale, false})
+		if MaxLines > 0 && len(lines) > int(MaxLines) do return
+
 		start = fit + 1
 	}
 }

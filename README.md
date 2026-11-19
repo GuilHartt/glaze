@@ -100,7 +100,7 @@ An element id derives from its parent and its position in the tree, so a call si
 
 Lato Regular is embedded, so `Label` renders with no setup and no asset to ship. More fonts come from `AddFontData` and `AddFontFile`, and `MergeFont` makes a second font supply the glyphs the first one lacks, which is how an icon font joins a text font.
 
-`WrapMode.Word` breaks text at the width it was given and `TextAlign` places each line. Measured lines are cached by text, font and size, so a label that does not change costs a lookup.
+`WrapMode.Word` breaks text at the width it was given, `TextAlign` places each line across it and `VerticalAlign` places the whole block down the height. `MaxLines` cuts the text at a line limit, and `Ellipsis` ends the cut line with `…`. Measured lines are cached by text, font and size, so a label that does not change costs a lookup.
 
 ## Drawing
 

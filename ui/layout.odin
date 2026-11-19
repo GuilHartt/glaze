@@ -65,17 +65,20 @@ Node :: struct {
 	subtree_end:  u32,
 }
 
-// TextContent is a leaf that paints `text` in `font`, at `size` layout units, tinted by
-// `color`. `wrap` and `align` say how it breaks and where each line sits.
+// TextContent is a leaf that paints `text` in `font`, at `size` layout units, tinted by `color`.
+// `wrap` says how it breaks, `max_lines` where it stops, and `align`/`valign` where it sits.
 @(private)
 TextContent :: struct {
-	text:  cstring,
-	font:  Font,
-	color: Color,
-	size:  f32,
-	wrap:  WrapMode,
-	align: TextAlign,
-	lines: []Line,
+	text:      cstring,
+	font:      Font,
+	color:     Color,
+	size:      f32,
+	wrap:      WrapMode,
+	max_lines: u16,
+	ellipsis:  bool,
+	align:     TextAlign,
+	valign:    VerticalAlign,
+	lines:     []Line,
 }
 
 // ImageContent is a leaf that paints `handle` over its rect, multiplied by `tint`. The host owns
@@ -388,7 +391,7 @@ measure_height :: proc() #no_bounds_check {
 	#reverse for &n, i in state.nodes {
 		switch &content in n.content {
 		case TextContent:
-			if content.wrap != .None {
+			if content.wrap != .None || content.max_lines > 0 {
 				n.content_size, content.lines = label_measure(content, max(n.rect.w - inset(&n).x, 0))
 			}
 		case ImageContent:

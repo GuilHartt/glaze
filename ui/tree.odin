@@ -200,12 +200,15 @@ Floating :: proc(
 Label :: proc(Text: cstring, Config: ElementConfig = {}, Style: LabelStyle = {}) -> ElementId #no_bounds_check {
 	node_id := Open({base = Config}, Style.Box)
 	state.nodes[len(state.nodes)-1].content = TextContent{
-		text  = Text,
-		font  = Style.Font,
-		color = Style.Color.? or_else {255, 255, 255, 255},
-		size  = Style.Size.? or_else 16,
-		wrap  = Style.Wrap,
-		align = Style.Align,
+		text      = Text,
+		font      = Style.Font,
+		color     = Style.Color.? or_else {255, 255, 255, 255},
+		size      = Style.Size.? or_else 16,
+		wrap      = Style.Wrap,
+		max_lines = Style.MaxLines,
+		ellipsis  = Style.Ellipsis,
+		align     = Style.TextAlign,
+		valign    = Style.VerticalAlign,
 	}
 	Close()
 	return node_id
