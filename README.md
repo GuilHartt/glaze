@@ -75,7 +75,7 @@ if ui.Row({Width = ui.Fill(), Pad = ui.Edge(16), Gap = 12, Align = .Center}) {
 Run an example to see it move:
 
 ```
-odin run examples/widgets
+odin run examples/buttons
 ```
 
 ## Layout
@@ -124,7 +124,7 @@ if widgets.Button("Save", Width = ui.Fixed(140)) {
 widgets.Checkbox("Remember me", &Remember)
 ```
 
-`examples/widgets` shows the widgets side by side and `examples/checkbox` a checkbox in its three states.
+`examples/buttons` shows the buttons side by side and `examples/checkbox` a checkbox in its three states.
 
 ## Backends
 
@@ -141,13 +141,13 @@ Everything the engine consumes arrives through `ui.Add*` and everything a widget
 The library reads its settings from Odin's build mode, so there is nothing to configure. Build an example with `-debug` while developing:
 
 ```
-odin run examples/widgets -debug
+odin run examples/buttons -debug
 ```
 
 A build meant for other people turns the optimizer on and drops the asserts:
 
 ```
-odin build examples/widgets -o:speed -disable-assert
+odin build examples/buttons -o:speed -disable-assert
 ```
 
 * `-o:speed` turns the optimizer on. The Odin default, `-o:minimal`, does little.

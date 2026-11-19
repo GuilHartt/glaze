@@ -7,7 +7,8 @@ import ui "../../ui"
 import widgets "../../widgets"
 
 main :: proc() {
-	rl.InitWindow(420, 300, "Glaze widgets")
+	rl.SetTraceLogLevel(.WARNING)
+	rl.InitWindow(420, 300, "Glaze buttons")
 	defer rl.CloseWindow()
 	rl.SetTargetFPS(60)
 	backend.Setup()

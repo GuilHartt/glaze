@@ -11,6 +11,7 @@ unchecked: bool
 disabled: bool = true
 
 main :: proc() {
+	rl.SetTraceLogLevel(.WARNING)
 	rl.InitWindow(420, 300, "Glaze checkbox")
 	defer rl.CloseWindow()
 	rl.SetTargetFPS(60)
