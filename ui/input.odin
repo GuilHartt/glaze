@@ -46,6 +46,7 @@ CursorIcon :: enum u8 {
 
 // Input holds the input state for the current frame. The backend fills it through the Add*
 // procedures and widgets read it through the query procedures.
+@(private)
 Input :: struct {
 	Pos:         Vec2,
 	PrevPos:     Vec2,
@@ -220,6 +221,7 @@ BindClipboard :: proc(
 }
 
 // Time holds the timing the backend feeds: the delta of the last frame and the total elapsed.
+@(private)
 Time :: struct {
 	Delta: f32,
 	Total: f32,

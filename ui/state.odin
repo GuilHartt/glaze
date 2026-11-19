@@ -69,6 +69,7 @@ Screen :: struct {
 	ui:          f32,
 }
 
+@(private)
 State :: struct {
 	screen:      Screen,
 	frame:       u32,

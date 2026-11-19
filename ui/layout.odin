@@ -49,6 +49,7 @@ prev_at :: proc(i: u32) -> Placement #no_bounds_check {
 	return state.prev[i]
 }
 
+@(private)
 Node :: struct {
 	config:       ContainerConfig,
 	style:        BoxStyle,
@@ -66,6 +67,7 @@ Node :: struct {
 
 // TextContent is a leaf that paints `text` in `font`, at `size` layout units, tinted by
 // `color`. `wrap` and `align` say how it breaks and where each line sits.
+@(private)
 TextContent :: struct {
 	text:  cstring,
 	font:  Font,
@@ -78,6 +80,7 @@ TextContent :: struct {
 
 // ImageContent is a leaf that paints `handle` over its rect, multiplied by `tint`. The host owns
 // the texture and keeps it alive while the handle is in use.
+@(private)
 ImageContent :: struct {
 	handle: Texture,
 	tint:   Color,
@@ -90,12 +93,14 @@ CustomProc :: #type proc(Rect: Rect, List: ^DrawList, Element: ElementId, User: 
 
 // CustomContent is a CustomProc and where its user value sits in the frame buffer. The leaf copies
 // the value, so it outlives the call that declared it, and the size is whatever the value needs.
+@(private)
 CustomContent :: struct {
 	Fn:     CustomProc,
 	Offset: u32,
 	Size:   u32,
 }
 
+@(private)
 Content :: union {
 	TextContent,
 	ImageContent,
