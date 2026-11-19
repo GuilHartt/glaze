@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-1f1f1f"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-1f1f1f"></a>
   <img alt="Odin dev-2026-11" src="https://img.shields.io/badge/odin-dev--2026--11-1f1f1f">
 </p>
 
@@ -165,6 +165,6 @@ odin build examples/widgets -o:speed -disable-assert
 
 ## License
 
-GNU Affero General Public License v3.0. See [LICENSE](LICENSE).
+MIT License. See [LICENSE](LICENSE).
 
 Copyright (C) 2026 Guilherme Avelar
