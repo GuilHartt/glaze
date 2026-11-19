@@ -10,7 +10,7 @@ ButtonStyle :: struct {
 
 // Button declares a centered label in a styled box and returns whether it was activated this
 // frame. A nil Style uses the theme's button style.
-Button :: proc(Text: cstring, Width: ui.Sizing = {}, Height: ui.Sizing = {}, Style: ^ButtonStyle = nil, Disabled: bool = false) -> bool {
+Button :: proc(Text: string, Width: ui.Sizing = {}, Height: ui.Sizing = {}, Style: ^ButtonStyle = nil, Disabled: bool = false) -> bool {
 	style := Style if Style != nil else &theme.Button
 
 	if ui.Row({

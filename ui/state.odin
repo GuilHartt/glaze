@@ -24,7 +24,7 @@ StorageKey :: struct {
 
 // ErrorProc receives a message when the library detects a misuse it can recover from, such as
 // an unbalanced PushId or a duplicate element id.
-ErrorProc :: #type proc(Message: cstring, User: rawptr)
+ErrorProc :: #type proc(Message: string, User: rawptr)
 
 @(private="file")
 error_proc: ErrorProc
@@ -42,7 +42,7 @@ BindError :: proc(Fn: ErrorProc, User: rawptr = nil) {
 // report sends one misuse message to the callback. A build with asserts traps, so the mistake
 // is not lost in a log nobody reads; a build without them only reports.
 @(private)
-report :: proc(Message: cstring) {
+report :: proc(Message: string) {
 	if error_proc != nil {
 		error_proc(Message, error_user)
 	}
@@ -56,7 +56,7 @@ report :: proc(Message: cstring) {
 
 // report_stderr writes a misuse message to stderr when no callback is bound.
 @(private="file")
-report_stderr :: proc(Message: cstring) {
+report_stderr :: proc(Message: string) {
 	fmt.eprintln("ui:", Message)
 }
 

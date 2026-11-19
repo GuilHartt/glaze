@@ -43,7 +43,7 @@ screen :: proc() {
 	}
 }
 
-section :: proc(Title: cstring, Tint: ui.Color, Body: cstring, Style: ui.LabelStyle) {
+section :: proc(Title: string, Tint: ui.Color, Body: string, Style: ui.LabelStyle) {
 	ui.Label(Title, {Width = ui.Fill()}, {Size = 12, Color = Tint})
 	ui.Label(Body, {Width = ui.Fill()}, Style)
 }

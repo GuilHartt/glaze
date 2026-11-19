@@ -3,6 +3,7 @@
 // state, and Render draws the command list the engine produced.
 package raylib_backend
 
+import "core:strings"
 import rl "vendor:raylib"
 import rlgl "vendor:raylib/rlgl"
 import ui "../../ui"
@@ -153,8 +154,8 @@ Render :: proc() {
 
 // AddTextureFile loads a texture from a file and gives it to the engine. The backend
 // owns the texture; call RemoveTexture when the handle is no longer used.
-AddTextureFile :: proc(Path: cstring) -> (T: ui.Texture, ok: bool) {
-	tex := rl.LoadTexture(Path)
+AddTextureFile :: proc(Path: string) -> (T: ui.Texture, ok: bool) {
+	tex := rl.LoadTexture(strings.clone_to_cstring(Path, context.temp_allocator))
 	if tex.id == 0 do return {}, false
 
 	owned := new(rl.Texture2D)
@@ -180,13 +181,14 @@ texture_id :: #force_inline proc "contextless" (T: ui.Texture) -> u32 {
 }
 
 @(private="file")
-clipboard_get :: proc(User: rawptr) -> cstring {
-	return rl.GetClipboardText()
+clipboard_get :: proc(User: rawptr) -> string {
+	if text := rl.GetClipboardText(); text != nil do return string(text)
+	return ""
 }
 
 @(private="file")
-clipboard_set :: proc(Text: cstring, User: rawptr) {
-	rl.SetClipboardText(Text)
+clipboard_set :: proc(Text: string, User: rawptr) {
+	rl.SetClipboardText(strings.clone_to_cstring(Text, context.temp_allocator))
 }
 
 // KEY_MAP maps each engine key to the raylib key that produces it. Every ui.Key

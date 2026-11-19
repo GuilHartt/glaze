@@ -69,7 +69,7 @@ Node :: struct {
 // `wrap` says how it breaks, `max_lines` where it stops, and `align`/`valign` where it sits.
 @(private)
 TextContent :: struct {
-	text:      cstring,
+	text:      string,
 	font:      Font,
 	color:     Color,
 	size:      f32,
@@ -510,7 +510,7 @@ place_floats :: proc() #no_bounds_check {
 				if i := node_of(a); i != NO_NODE {
 					origin = padding_origin(i)
 				} else {
-					report(fmt.ctprintf("ui: floating anchor %v not found", a))
+					report(fmt.tprintf("ui: floating anchor %v not found", a))
 				}
 			}
 		case AnchorKind:
@@ -564,7 +564,7 @@ when ODIN_DEBUG {
 
 		for &n, i in state.nodes {
 			if previous, ok := seen[n.id]; ok {
-				report(fmt.ctprintf("ui: duplicate element id at node %v and node %v", previous, i))
+				report(fmt.tprintf("ui: duplicate element id at node %v and node %v", previous, i))
 				return
 			}
 			seen[n.id] = u32(i)

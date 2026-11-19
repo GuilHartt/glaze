@@ -71,8 +71,8 @@ Input :: struct {
 	RepeatRate:  f32,
 	Text:        [dynamic]u8,
 
-	ClipboardGet:  proc(User: rawptr) -> cstring,
-	ClipboardSet:  proc(Text: cstring, User: rawptr),
+	ClipboardGet:  proc(User: rawptr) -> string,
+	ClipboardSet:  proc(Text: string, User: rawptr),
 	ClipboardUser: rawptr,
 }
 
@@ -185,22 +185,22 @@ ModifierDown :: proc(Mod: Modifier) -> bool {
 	return false
 }
 
-// TextInput returns the text typed this frame as a null-terminated string, valid until the end
-// of the frame.
-TextInput :: proc() -> cstring {
-	return cstring(raw_data(input.Text))
+// TextInput returns the text typed this frame, valid until the end of the frame.
+TextInput :: proc() -> string {
+	if len(input.Text) == 0 do return ""
+	return string(input.Text[:len(input.Text) - 1])
 }
 
 // GetClipboard returns the system clipboard contents, using the callback bound with
-// BindClipboard. Returns nil when no callback is bound.
-GetClipboard :: proc() -> cstring {
-	if input.ClipboardGet == nil do return nil
+// BindClipboard, or an empty string when no callback is bound.
+GetClipboard :: proc() -> string {
+	if input.ClipboardGet == nil do return ""
 	return input.ClipboardGet(input.ClipboardUser)
 }
 
 // SetClipboard copies `Text` to the system clipboard, using the callback bound with
 // BindClipboard. Does nothing when no callback is bound.
-SetClipboard :: proc(Text: cstring) {
+SetClipboard :: proc(Text: string) {
 	if input.ClipboardSet != nil {
 		input.ClipboardSet(Text, input.ClipboardUser)
 	}
@@ -230,10 +230,10 @@ AddKey :: proc(Key: Key, Down: bool) {
 }
 
 // AddTypedText feeds text typed this frame. The backend must pass it already decoded to UTF-8.
-AddTypedText :: proc(Text: cstring) {
-	if Text == nil do return
+AddTypedText :: proc(Text: string) {
+	if len(Text) == 0 do return
 	drop_terminator()
-	append(&input.Text, ..(cast([^]u8)Text)[0:len(Text)])
+	append(&input.Text, Text)
 	append(&input.Text, 0)
 }
 
@@ -256,8 +256,8 @@ drop_terminator :: proc() {
 // BindClipboard registers the backend callbacks used by GetClipboard and SetClipboard, so
 // clipboard access stays backend-independent.
 BindClipboard :: proc(
-	Get: proc(User: rawptr) -> cstring,
-	Set: proc(Text: cstring, User: rawptr),
+	Get: proc(User: rawptr) -> string,
+	Set: proc(Text: string, User: rawptr),
 	User: rawptr = nil,
 ) {
 	input.ClipboardGet  = Get

@@ -12,7 +12,7 @@ CheckboxStyle :: struct {
 }
 
 // Checkbox toggles the bool `Checked` points to and returns whether it changed this frame.
-Checkbox :: proc(Text: cstring, Checked: ^bool, Width: ui.Sizing = {}, Height: ui.Sizing = {}, Style: ^CheckboxStyle = nil, Disabled: bool = false) -> bool {
+Checkbox :: proc(Text: string, Checked: ^bool, Width: ui.Sizing = {}, Height: ui.Sizing = {}, Style: ^CheckboxStyle = nil, Disabled: bool = false) -> bool {
 	style := Style if Style != nil else &theme.Checkbox
 
 	if ui.Row({

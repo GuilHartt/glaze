@@ -197,7 +197,7 @@ Floating :: proc(
 
 // Label adds a text leaf and returns its id, so it can be the target of Hovered/Clicked. `Config`
 // is the box, and `Style` paints it and the text inside.
-Label :: proc(Text: cstring, Config: ElementConfig = {}, Style: LabelStyle = {}) -> ElementId #no_bounds_check {
+Label :: proc(Text: string, Config: ElementConfig = {}, Style: LabelStyle = {}) -> ElementId #no_bounds_check {
 	node_id := Open({base = Config}, Style.Box)
 	state.nodes[len(state.nodes)-1].content = TextContent{
 		text      = Text,

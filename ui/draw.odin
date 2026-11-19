@@ -107,10 +107,10 @@ mesh_command :: proc(List: ^DrawList, Count: u32) {
 }
 
 // AddText appends `Text` with its top left corner at `Pos`. `Pos` and `Size` are in layout
-// units.
-AddText :: proc(List: ^DrawList, Pos: Vec2, Text: cstring, Tint: Color, Font: Font = 0, Size: f32 = 16) {
-	if Text == nil do return
-	add_text_run(List, Pos, string(Text), Tint, Font, Size)
+// units. It takes a slice, so a prefix of a longer string draws without a copy; a `cstring`
+// converts with `string(c)`.
+AddText :: proc(List: ^DrawList, Pos: Vec2, Text: string, Tint: Color, Font: Font = 0, Size: f32 = 16) {
+	add_text_run(List, Pos, Text, Tint, Font, Size)
 }
 
 // add_text_run appends a run that needs no terminator, so a wrapped line is drawn as the
@@ -285,7 +285,7 @@ draw_node :: proc(i: u32) #no_bounds_check {
 			case .Right:
 				x += max(inner.w - line.Width, 0)
 			case .Justify:
-				source := string(content.text)
+				source := content.text
 				if !line.Truncated && line.Width < inner.w && line.End < u32(len(source)) && source[line.End] != '\n' {
 					spaces := 0
 					for c in source[line.Start:line.End] {
@@ -304,7 +304,7 @@ draw_node :: proc(i: u32) #no_bounds_check {
 			add_text_run(
 				&list,
 				{x, y},
-				string(content.text)[line.Start:line.End],
+				content.text[line.Start:line.End],
 				content.color,
 				content.font,
 				content.size,

@@ -50,15 +50,16 @@ MergeFont :: proc(Base, Fallback: Font) -> bool {
 }
 
 // MeasureText returns the size `Text` occupies in `Font` at `Size`, in layout units: the
-// advance width and the line height.
-MeasureText :: proc(Text: cstring, Font: Font, Size: f32) -> Vec2 {
+// advance width and the line height. It takes a slice, so a prefix of a longer string measures
+// without a copy; a `cstring` converts with `string(c)`.
+MeasureText :: proc(Text: string, Font: Font, Size: f32) -> Vec2 {
 	if len(font_ctx.fonts) == 0 || Size <= 0 do return {}
 
 	scale := effective_scale()
 	fontstash.SetFont(&font_ctx, int(Font))
 	fontstash.SetSize(&font_ctx, Size * scale)
 
-	advance := fontstash.TextBounds(&font_ctx, string(Text))
+	advance := fontstash.TextBounds(&font_ctx, Text)
 	_, _, line_height := fontstash.VerticalMetrics(&font_ctx)
 
 	return {advance / scale, line_height / scale}

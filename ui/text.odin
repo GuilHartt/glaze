@@ -54,7 +54,7 @@ label_cache: map[LabelKey]LabelCache
 // next call. Only `Word` breaks by `MaxWidth`; `MaxLines` stops the text and `Ellipsis` marks
 // the line it stopped on.
 WrapText :: proc(
-	Text: cstring,
+	Text: string,
 	Font: Font,
 	Size: f32,
 	Mode: WrapMode,
@@ -63,13 +63,13 @@ WrapText :: proc(
 	Ellipsis: bool = false,
 ) -> []Line {
 	clear(&lines)
-	if Text == nil || Size <= 0 do return lines[:]
+	if len(Text) == 0 || Size <= 0 do return lines[:]
 
 	scale := effective_scale()
 	fontstash.SetFont(&font_ctx, int(Font))
 	fontstash.SetSize(&font_ctx, Size * scale)
 
-	src, space := string(Text), measure(" ")
+	src, space := Text, measure(" ")
 	limit := MaxWidth * scale if Mode == .Word else f32(0)
 
 	// Without a width there is nothing to cut against, so an intrinsic measurement keeps the
@@ -94,7 +94,7 @@ WrapText :: proc(
 // MeasureTextWrapped returns the block size `Text` occupies when wrapped to `Width`, in layout
 // units: the widest line by the stacked line height.
 MeasureTextWrapped :: proc(
-	Text: cstring,
+	Text: string,
 	Font: Font,
 	Size: f32,
 	Mode: WrapMode,
@@ -121,7 +121,7 @@ label_measure :: proc(Content: TextContent, Width: f32) -> (block: Vec2, broken:
 @(private="file")
 cached_label :: proc(Content: TextContent, Width: f32) -> ^LabelCache {
 	key := LabelKey{
-		text     = string(Content.text),
+		text     = Content.text,
 		font     = Content.font,
 		size     = Content.size,
 		mode     = Content.wrap,
