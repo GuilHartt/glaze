@@ -248,8 +248,13 @@ path_arc_to :: proc(List: ^DrawList, Center: Vec2, Radius: f32, A0, A1: f32, Tin
 	c, s := math.cos(step), math.sin(step)
 	x, y := math.cos(A0) * Radius, math.sin(A0) * Radius
 
-	reserve(&List.path, len(List.path) + n + 1)
-	for _ in 0 ..= n {
+	// A full turn ends where it starts, so its last point would duplicate the first and leave the
+	// seam between two normals. The path closes implicitly instead, as every closed path does.
+	count := n + 1
+	if abs(A1 - A0) >= math.TAU do count = n
+
+	reserve(&List.path, len(List.path) + count)
+	for _ in 0 ..< count {
 		append(&List.path, PathPoint{pos = {Center.x + x, Center.y + y}, col = Tint})
 		x, y = x * c - y * s, x * s + y * c
 	}
