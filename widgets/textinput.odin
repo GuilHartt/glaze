@@ -178,9 +178,13 @@ text_input_keys :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, MaxChars: int, Filt
 		case ui.KeyPressed(.C):
 			copy_selection(buffer, Edit)
 		case ui.KeyPressed(.X):
-			if copy_selection(buffer, Edit) do changed = erase(Text, Edit, false)
+			if copy_selection(buffer, Edit) do changed = erase(Text, Edit, .RuneBack)
 		case ui.KeyPressed(.V):
 			changed = insert_text(Text, Edit, filter_text(one_line(ui.GetClipboard()), Filter), MaxChars)
+		case ui.KeyPressed(.Backspace, true):
+			changed = erase(Text, Edit, .WordBack)
+		case ui.KeyPressed(.Delete, true):
+			changed = erase(Text, Edit, .WordForward)
 		case ui.KeyPressed(.Left, true):
 			step_caret(buffer, Edit, .WordBack, shift)
 		case ui.KeyPressed(.Right, true):
@@ -197,9 +201,9 @@ text_input_keys :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, MaxChars: int, Filt
 		case ui.KeyPressed(.End):
 			move_caret(Edit, len(buffer), shift)
 		case ui.KeyPressed(.Backspace, true):
-			changed = erase(Text, Edit, false)
+			changed = erase(Text, Edit, .RuneBack)
 		case ui.KeyPressed(.Delete, true):
-			changed = erase(Text, Edit, true)
+			changed = erase(Text, Edit, .RuneForward)
 		case ui.KeyPressed(.Enter):
 			submitted = true
 			Edit.Active = false
@@ -224,14 +228,14 @@ text_input_keys :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, MaxChars: int, Filt
 	return changed, submitted
 }
 
-// CaretStep is the unit a caret move travels: a rune or a word, backwards or forwards.
+// TextStep is one step through the buffer: a rune or a word, back or forward.
 @(private="file")
-CaretStep :: enum u8 { RuneBack, RuneForward, WordBack, WordForward }
+TextStep :: enum u8 { RuneBack, RuneForward, WordBack, WordForward }
 
 // step_caret moves the caret one `Step`, collapsing the selection to its edge when `Select`
 // is off, so the move starts from there instead of stepping.
 @(private="file")
-step_caret :: proc(Text: []u8, Edit: ^TextEdit, Step: CaretStep, Select: bool) {
+step_caret :: proc(Text: []u8, Edit: ^TextEdit, Step: TextStep, Select: bool) {
 	if !Select {
 		if start, end := selection(Edit); start != end {
 			back := Step == .RuneBack || Step == .WordBack
@@ -396,14 +400,18 @@ insert_text :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, Value: string, MaxChars
 	return true
 }
 
-// erase removes the selection, or one rune before or after the caret when there is none, and
-// reports whether it removed anything.
+// erase removes the selection, or one `Step` from the caret when there is none, and reports
+// whether it removed anything.
 @(private="file")
-erase :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, Forward: bool) -> bool {
+erase :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, Step: TextStep) -> bool {
 	start, end := selection(Edit)
 	if start == end {
-		start = Edit.Caret if Forward else rune_before(Text^[:], Edit.Caret)
-		end = rune_after(Text^[:], Edit.Caret) if Forward else Edit.Caret
+		switch Step {
+		case .RuneBack:    start = rune_before(Text^[:], Edit.Caret)
+		case .RuneForward: end = rune_after(Text^[:], Edit.Caret)
+		case .WordBack:    start = word_step(Text^[:], Edit.Caret, false)
+		case .WordForward: end = word_step(Text^[:], Edit.Caret, true)
+		}
 	}
 	if start == end do return false
 
