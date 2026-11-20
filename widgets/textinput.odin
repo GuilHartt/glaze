@@ -66,7 +66,7 @@ TextInputVisual :: struct {
 }
 
 // TextInput draws the UTF-8 buffer `Text` as a single-line field, reporting a change and a submit.
-// Enter blurs, Escape reverts to the focus text, and `MaxChars` and `Filter` bound what enters.
+// Enter blurs, Escape reverts, `MaxChars` and `Filter` bound input, and `ReadOnly` only selects.
 TextInput :: proc(
 	Text:        ^[dynamic]u8,
 	Width:       ui.Sizing = {Kind = .Fixed, Grow = 1, Shrink = 1},
@@ -74,6 +74,7 @@ TextInput :: proc(
 	Placeholder: string = "",
 	MaxChars:    int = 0,
 	Filter:      CharFilter = nil,
+	ReadOnly:    bool = false,
 	Style:       ^TextInputStyle = nil,
 	Disabled:    bool = false,
 ) -> (changed, submitted: bool) {
@@ -112,7 +113,7 @@ TextInput :: proc(
 
 			edit.Blink += ui.DeltaTime()
 			if edit.Blink >= 1 do edit.Blink -= 1
-			changed, submitted = text_input_keys(Text, edit, MaxChars, Filter)
+			changed, submitted = text_input_keys(Text, edit, MaxChars, Filter, ReadOnly)
 			buffer = Text^[:]
 
 			rect := ui.ElementRect(element)
@@ -166,7 +167,7 @@ TextInput :: proc(
 // text_input_keys applies the editing keys a focused text input takes and reports a change and a
 // submit.
 @(private="file")
-text_input_keys :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, MaxChars: int, Filter: CharFilter) -> (changed, submitted: bool) {
+text_input_keys :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, MaxChars: int, Filter: CharFilter, ReadOnly: bool) -> (changed, submitted: bool) {
 	caret, anchor := Edit.Caret, Edit.Anchor
 	buffer := Text^[:]
 	shift := ui.ModifierDown(.Shift)
@@ -178,12 +179,16 @@ text_input_keys :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, MaxChars: int, Filt
 		case ui.KeyPressed(.C):
 			copy_selection(buffer, Edit)
 		case ui.KeyPressed(.X):
+			if ReadOnly do break
 			if copy_selection(buffer, Edit) do changed = erase(Text, Edit, .RuneBack)
 		case ui.KeyPressed(.V):
+			if ReadOnly do break
 			changed = insert_text(Text, Edit, filter_text(one_line(ui.GetClipboard()), Filter), MaxChars)
 		case ui.KeyPressed(.Backspace, true):
+			if ReadOnly do break
 			changed = erase(Text, Edit, .WordBack)
 		case ui.KeyPressed(.Delete, true):
+			if ReadOnly do break
 			changed = erase(Text, Edit, .WordForward)
 		case ui.KeyPressed(.Left, true):
 			step_caret(buffer, Edit, .WordBack, shift)
@@ -201,15 +206,17 @@ text_input_keys :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, MaxChars: int, Filt
 		case ui.KeyPressed(.End):
 			move_caret(Edit, len(buffer), shift)
 		case ui.KeyPressed(.Backspace, true):
+			if ReadOnly do break
 			changed = erase(Text, Edit, .RuneBack)
 		case ui.KeyPressed(.Delete, true):
+			if ReadOnly do break
 			changed = erase(Text, Edit, .RuneForward)
 		case ui.KeyPressed(.Enter):
 			submitted = true
 			Edit.Active = false
 			ui.ClearFocus()
 		case ui.KeyPressed(.Escape):
-			if string(Text^[:]) != string(Edit.Original[:]) {
+			if !ReadOnly && string(Text^[:]) != string(Edit.Original[:]) {
 				clear(Text)
 				append(Text, ..Edit.Original[:])
 				Edit.Caret, Edit.Anchor = len(Text^), len(Text^)
@@ -219,7 +226,7 @@ text_input_keys :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, MaxChars: int, Filt
 			ui.ClearFocus()
 		}
 
-		if typed := one_line(ui.TextInput()); len(typed) > 0 {
+		if typed := one_line(ui.TextInput()); !ReadOnly && len(typed) > 0 {
 			changed = insert_text(Text, Edit, filter_text(typed, Filter), MaxChars) || changed
 		}
 	}
