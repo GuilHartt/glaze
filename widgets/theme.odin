@@ -65,6 +65,7 @@ Theme :: struct {
 	Button:       ButtonStyle,
 	Checkbox:     CheckboxStyle,
 	Slider:       SliderStyle,
+	TextInput:    TextInputStyle,
 }
 
 // DefaultTheme returns the built-in dark theme, with every widget default derived from its
@@ -135,6 +136,13 @@ DefaultTheme :: proc() -> Theme {
 		TrackHeight = 4,
 		KnobRadius  = 7,
 		Gap         = 4,
+	}
+
+	value.TextInput = {
+		common      = default_widget_style(value),
+		Caret       = value.Color[.Text],
+		Selection   = ui.Hex(0x4C8DFF, 90),
+		Placeholder = value.Color[.Muted],
 	}
 
 	return value
