@@ -94,6 +94,7 @@ DefaultTheme :: proc() -> Theme {
 		},
 	}
 	value.Button = {common = default_widget_style(value)}
+
 	value.Checkbox = {
 		common = default_widget_style(value),
 		Check  = {
@@ -106,6 +107,7 @@ DefaultTheme :: proc() -> Theme {
 		Box = value.Metric[.FontSize],
 		Gap = value.Metric[.Gap],
 	}
+
 	value.Slider = {
 		Track = {
 			.Normal   = value.Color[.SurfacePressed],
@@ -134,6 +136,7 @@ DefaultTheme :: proc() -> Theme {
 		KnobRadius  = 7,
 		Gap         = 4,
 	}
+
 	return value
 }
 
@@ -148,18 +151,30 @@ CurrentTheme :: proc() -> Theme {
 	return theme
 }
 
-// widget_state picks the state a widget paints for from the interaction queries of `Element`.
+// Every widget runs the same pipeline: widget_box opens and closes the box, widget_state
+// resolves the visual, widget_style builds the box style, and widget_cursor asks for the pointer.
+
+// widget_box opens the node every widget sits in, with the hit and focus a disabled widget
+// turns off, and closes it at the end of the block.
+@(private)
+@(require_results, deferred_none = ui.Close)
+widget_box :: proc(Config: ui.ContainerConfig, Disabled: bool) -> bool {
+	config := Config
+	config.Hit = .Ignore if Disabled else .Stop
+	config.Focusable = !Disabled
+	ui.Open(config)
+	return true
+}
+
+// widget_state picks the state a widget paints for from the interaction of `Element`. A widget
+// is pressed only while the pointer holds it, not when the keyboard activates it.
 @(private)
 widget_state :: proc(Element: ui.ElementId, Disabled: bool) -> WidgetState {
 	switch {
-	case Disabled:
-		return .Disabled
-	case ui.Activated(Element), ui.Pressed(Element):
-		return .Pressed
-	case ui.Hovered(Element):
-		return .Hovered
-	case ui.Focused(Element):
-		return .Focused
+	case Disabled:            return .Disabled
+	case ui.Pressed(Element): return .Pressed
+	case ui.Hovered(Element): return .Hovered
+	case ui.Focused(Element): return .Focused
 	}
 	return .Normal
 }
@@ -175,10 +190,11 @@ widget_style :: proc(Style: ^WidgetStyle, State: WidgetState, Focused: bool) -> 
 	}
 }
 
-// widget_cursor shows the hand cursor while a widget is hovered and enabled.
+// widget_cursor asks for `Icon` while a widget is hovered and enabled. The hand is the default,
+// since most widgets are clickable.
 @(private)
-widget_cursor :: proc(Element: ui.ElementId, Disabled: bool) {
-	if !Disabled && ui.Hovered(Element) do ui.SetCursor(.Hand)
+widget_cursor :: proc(Element: ui.ElementId, Disabled: bool, Icon: ui.CursorIcon = .Hand) {
+	if !Disabled && ui.Hovered(Element) do ui.SetCursor(Icon)
 }
 
 // default_widget_style derives the shared box style from the theme's color and metric roles.
@@ -215,10 +231,4 @@ default_widget_style :: proc(Source: Theme) -> WidgetStyle {
 }
 
 @(private)
-theme: Theme
-
-@(private)
-@(init)
-theme_init :: proc() {
-	theme = DefaultTheme()
-}
+theme: Theme = DefaultTheme()

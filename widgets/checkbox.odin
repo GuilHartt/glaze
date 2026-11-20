@@ -15,21 +15,13 @@ CheckboxStyle :: struct {
 Checkbox :: proc(Text: string, Checked: ^bool, Width: ui.Sizing = {}, Height: ui.Sizing = {}, Style: ^CheckboxStyle = nil, Disabled: bool = false) -> bool {
 	style := Style if Style != nil else &theme.Checkbox
 
-	if ui.Row({
-		Width     = Width,
-		Height    = Height,
-		Pad       = style.Pad,
-		Gap       = style.Gap,
-		Justify   = .Start,
-		Align     = .Center,
-		Hit       = .Ignore if Disabled else .Stop,
-		Focusable = !Disabled,
-	}) {
+	if widget_box({Width = Width, Height = Height, Pad = style.Pad, Gap = style.Gap, Justify = .Start, Align = .Center}, Disabled) {
 		element := ui.LastId()
+		state := widget_state(element, Disabled)
+		widget_cursor(element, Disabled)
+
 		changed := !Disabled && ui.Activated(element)
 		if changed do Checked^ = !Checked^
-
-		state := widget_state(element, Disabled)
 
 		box := CheckboxBox{Check = style.Check[state], Size = style.Box, Checked = Checked^}
 		ui.Custom(
@@ -40,15 +32,13 @@ Checkbox :: proc(Text: string, Checked: ^bool, Width: ui.Sizing = {}, Height: ui
 		)
 		ui.Label(Text, {Hit = .Ignore}, {Color = style.Text[state], Size = style.FontSize, Font = style.Font})
 
-		widget_cursor(element, Disabled)
 		return changed
 	}
 	return false
 }
 
-// CheckboxBox is what the box callback paints: the check color and the box size, both resolved
-// where the checkbox was declared, and whether the box is checked. The values are copied, since
-// the caller's style may be a local that is gone by the time the callback runs.
+// CheckboxBox is what the box callback paints, resolved where the checkbox was declared. It is
+// copied because the caller's style may be a local gone by the time the callback runs.
 @(private="file")
 CheckboxBox :: struct {
 	Check:   ui.Color,
@@ -58,7 +48,7 @@ CheckboxBox :: struct {
 
 // draw_checkbox paints the check inside a box the node already filled and outlined.
 @(private="file")
-draw_checkbox :: proc(Rect: ui.Rect, List: ^ui.DrawList, Element: ui.ElementId, User: rawptr) {
+draw_checkbox :: proc(Rect: ui.Rect, Element: ui.ElementId, User: rawptr) {
 	box := (^CheckboxBox)(User)
 	if !box.Checked do return
 
@@ -67,5 +57,5 @@ draw_checkbox :: proc(Rect: ui.Rect, List: ^ui.DrawList, Element: ui.ElementId, 
 		{Rect.x + Rect.w * 0.43, Rect.y + Rect.h * 0.72},
 		{Rect.x + Rect.w * 0.76, Rect.y + Rect.h * 0.30},
 	}
-	ui.AddPolygonStroke(List, points[:], box.Check, box.Size * 0.12, Closed = false)
+	ui.AddPolygonStroke(points[:], box.Check, box.Size * 0.12, Closed = false)
 }

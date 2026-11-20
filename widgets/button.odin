@@ -13,21 +13,13 @@ ButtonStyle :: struct {
 Button :: proc(Text: string, Width: ui.Sizing = {}, Height: ui.Sizing = {}, Style: ^ButtonStyle = nil, Disabled: bool = false) -> bool {
 	style := Style if Style != nil else &theme.Button
 
-	if ui.Row({
-		Width     = Width,
-		Height    = Height,
-		Pad       = style.Pad,
-		Justify   = .Center,
-		Align     = .Center,
-		Hit       = .Ignore if Disabled else .Stop,
-		Focusable = !Disabled,
-	}) {
+	if widget_box({Width = Width, Height = Height, Pad = style.Pad, Justify = .Center, Align = .Center}, Disabled) {
 		element := ui.LastId()
 		state := widget_state(element, Disabled)
-
-		ui.Label(Text, {Hit = .Ignore}, {Color = style.Text[state], Size = style.FontSize, Font = style.Font})
 		ui.SetStyle(element, widget_style(&style.common, state, ui.Focused(element)))
 		widget_cursor(element, Disabled)
+
+		ui.Label(Text, {Hit = .Ignore}, {Color = style.Text[state], Size = style.FontSize, Font = style.Font})
 
 		return !Disabled && ui.Activated(element)
 	}
