@@ -66,7 +66,7 @@ TextInputVisual :: struct {
 }
 
 // TextInput draws the UTF-8 buffer `Text` as a single-line field, reporting a change and a submit.
-// Enter blurs, Escape reverts, `MaxChars` and `Filter` bound input, and `ReadOnly` only selects.
+// Enter blurs, Escape reverts, and `MaxChars`, `Filter`, `ReadOnly` and `Mask` shape the field.
 TextInput :: proc(
 	Text:        ^[dynamic]u8,
 	Width:       ui.Sizing = {Kind = .Fixed, Grow = 1, Shrink = 1},
@@ -75,6 +75,7 @@ TextInput :: proc(
 	MaxChars:    int = 0,
 	Filter:      CharFilter = nil,
 	ReadOnly:    bool = false,
+	Mask:        rune = 0,
 	Style:       ^TextInputStyle = nil,
 	Disabled:    bool = false,
 ) -> (changed, submitted: bool) {
@@ -104,6 +105,8 @@ TextInput :: proc(
 		edit.Caret = clamp(edit.Caret, 0, len(buffer))
 		edit.Anchor = clamp(edit.Anchor, 0, len(buffer))
 
+		display, mask_size := mask_display(buffer, Mask)
+
 		if focused {
 			if !edit.Active {
 				clear(&edit.Original)
@@ -113,15 +116,19 @@ TextInput :: proc(
 
 			edit.Blink += ui.DeltaTime()
 			if edit.Blink >= 1 do edit.Blink -= 1
-			changed, submitted = text_input_keys(Text, edit, MaxChars, Filter, ReadOnly)
-			buffer = Text^[:]
+			changed, submitted = text_input_keys(Text, edit, MaxChars, Filter, ReadOnly, Mask)
+			if changed {
+				buffer = Text^[:]
+				display, mask_size = mask_display(buffer, Mask)
+			}
 
 			rect := ui.ElementRect(element)
 			inner_w := rect.w - style.Pad.Left - style.Pad.Right - style.BorderWidth.Left - style.BorderWidth.Right
 
 			if ui.Pressed(element) && inner_w > 0 {
 				inner_x := rect.x + style.Pad.Left + style.BorderWidth.Left
-				at := index_at_x(string(buffer), ui.MousePos().x - inner_x + edit.Scroll, style.Font, style.FontSize)
+				at := index_at_x(display, ui.MousePos().x - inner_x + edit.Scroll, style.Font, style.FontSize)
+				if mask_size > 0 do at = len(rune_prefix(string(buffer), at / mask_size))
 
 				// Dragging keeps the anchor the press placed, so the pointer extends the selection.
 				move_caret(edit, at, !ui.MousePressed(.Left) || ui.ModifierDown(.Shift))
@@ -133,21 +140,21 @@ TextInput :: proc(
 				edit.Blink = 0
 			}
 
-			scroll_to_caret(string(buffer), edit, inner_w, style.Font, style.FontSize)
+			scroll_to_caret(display, edit, display_at(buffer, edit.Caret, mask_size), inner_w, style.Font, style.FontSize)
 		} else {
 			edit.Blink = 0
 			edit.Active = false
 		}
 
-		run, tint := string(buffer), style.Text[state]
+		run, tint := display, style.Text[state]
 		if len(buffer) == 0 && !focused {
 			run, tint = Placeholder, style.Placeholder
 		}
 
 		visual := TextInputVisual{
 			Text        = run,
-			Caret       = edit.Caret,
-			Anchor      = edit.Anchor,
+			Caret       = display_at(buffer, edit.Caret, mask_size),
+			Anchor      = display_at(buffer, edit.Anchor, mask_size),
 			Scroll      = edit.Scroll,
 			Font        = style.Font,
 			Size        = style.FontSize,
@@ -167,7 +174,7 @@ TextInput :: proc(
 // text_input_keys applies the editing keys a focused text input takes and reports a change and a
 // submit.
 @(private="file")
-text_input_keys :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, MaxChars: int, Filter: CharFilter, ReadOnly: bool) -> (changed, submitted: bool) {
+text_input_keys :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, MaxChars: int, Filter: CharFilter, ReadOnly: bool, Mask: rune) -> (changed, submitted: bool) {
 	caret, anchor := Edit.Caret, Edit.Anchor
 	buffer := Text^[:]
 	shift := ui.ModifierDown(.Shift)
@@ -177,19 +184,15 @@ text_input_keys :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, MaxChars: int, Filt
 		case ui.KeyPressed(.A):
 			Edit.Anchor, Edit.Caret = 0, len(buffer)
 		case ui.KeyPressed(.C):
-			copy_selection(buffer, Edit)
+			if Mask == 0 do copy_selection(buffer, Edit)
 		case ui.KeyPressed(.X):
-			if ReadOnly do break
-			if copy_selection(buffer, Edit) do changed = erase(Text, Edit, .RuneBack)
+			if !ReadOnly && Mask == 0 && copy_selection(buffer, Edit) do changed = erase(Text, Edit, .RuneBack)
 		case ui.KeyPressed(.V):
-			if ReadOnly do break
-			changed = insert_text(Text, Edit, filter_text(one_line(ui.GetClipboard()), Filter), MaxChars)
+			if !ReadOnly do changed = insert_text(Text, Edit, filter_text(one_line(ui.GetClipboard()), Filter), MaxChars)
 		case ui.KeyPressed(.Backspace, true):
-			if ReadOnly do break
-			changed = erase(Text, Edit, .WordBack)
+			if !ReadOnly do changed = erase(Text, Edit, .WordBack)
 		case ui.KeyPressed(.Delete, true):
-			if ReadOnly do break
-			changed = erase(Text, Edit, .WordForward)
+			if !ReadOnly do changed = erase(Text, Edit, .WordForward)
 		case ui.KeyPressed(.Left, true):
 			step_caret(buffer, Edit, .WordBack, shift)
 		case ui.KeyPressed(.Right, true):
@@ -206,11 +209,9 @@ text_input_keys :: proc(Text: ^[dynamic]u8, Edit: ^TextEdit, MaxChars: int, Filt
 		case ui.KeyPressed(.End):
 			move_caret(Edit, len(buffer), shift)
 		case ui.KeyPressed(.Backspace, true):
-			if ReadOnly do break
-			changed = erase(Text, Edit, .RuneBack)
+			if !ReadOnly do changed = erase(Text, Edit, .RuneBack)
 		case ui.KeyPressed(.Delete, true):
-			if ReadOnly do break
-			changed = erase(Text, Edit, .RuneForward)
+			if !ReadOnly do changed = erase(Text, Edit, .RuneForward)
 		case ui.KeyPressed(.Enter):
 			submitted = true
 			Edit.Active = false
@@ -386,6 +387,27 @@ filter_text :: proc(Value: string, Filter: CharFilter) -> string {
 	return string(filtered[:])
 }
 
+@(private="file") masked: [dynamic]u8
+
+// mask_display returns `Text` as it is drawn: itself, or one `Mask` rune per rune of it, with the
+// size of one mask rune.
+@(private="file")
+mask_display :: proc(Text: []u8, Mask: rune) -> (string, int) {
+	if Mask == 0 do return string(Text), 0
+
+	bytes, size := utf8.encode_rune(Mask)
+	clear(&masked)
+	for _ in string(Text) do append(&masked, ..bytes[:size])
+	return string(masked[:]), size
+}
+
+// display_at maps a buffer offset to its offset in the masked text.
+@(private="file")
+display_at :: proc(Text: []u8, At, MaskSize: int) -> int {
+	if MaskSize == 0 do return At
+	return utf8.rune_count(Text[:clamp(At, 0, len(Text))]) * MaskSize
+}
+
 // insert_text replaces the selection with `Value` and places the caret after it, keeping at
 // most `MaxChars` runes in the buffer. Zero means no limit.
 @(private="file")
@@ -462,12 +484,12 @@ index_at_x :: proc(Text: string, X: f32, Font: ui.Font, Size: f32) -> int {
 	return best
 }
 
-// scroll_to_caret moves the scroll so the caret stays inside `Width`, in layout units.
+// scroll_to_caret moves the scroll so `At` stays inside `Width`, in layout units.
 @(private="file")
-scroll_to_caret :: proc(Text: string, Edit: ^TextEdit, Width: f32, Font: ui.Font, Size: f32) {
+scroll_to_caret :: proc(Text: string, Edit: ^TextEdit, At: int, Width: f32, Font: ui.Font, Size: f32) {
 	if Width <= 0 do return
 
-	caret := text_advance(Text, Edit.Caret, Font, Size)
+	caret := text_advance(Text, At, Font, Size)
 	full := text_advance(Text, len(Text), Font, Size)
 
 	if caret - Edit.Scroll > Width - 1 do Edit.Scroll = caret - Width + 1
