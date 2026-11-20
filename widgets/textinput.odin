@@ -15,7 +15,27 @@ TextInputStyle :: struct {
 
 // CharFilter screens a rune that typing or pasting puts in the buffer: the returned rune replaces
 // it, and false drops it.
-CharFilter :: proc(Rune: rune) -> (rune, bool)
+CharFilter :: #type proc(Rune: rune) -> (rune, bool)
+
+// FilterDigits keeps 0 through 9.
+FilterDigits :: proc(Rune: rune) -> (rune, bool) {
+	return Rune, Rune >= '0' && Rune <= '9'
+}
+
+// FilterDecimal keeps digits, the point and the two signs a number needs.
+FilterDecimal :: proc(Rune: rune) -> (rune, bool) {
+	return Rune, Rune >= '0' && Rune <= '9' || Rune == '.' || Rune == '+' || Rune == '-'
+}
+
+// FilterHexadecimal keeps digits and a through f, in either case.
+FilterHexadecimal :: proc(Rune: rune) -> (rune, bool) {
+	return Rune, Rune >= '0' && Rune <= '9' || Rune >= 'a' && Rune <= 'f' || Rune >= 'A' && Rune <= 'F'
+}
+
+// FilterUppercase maps every letter to upper case.
+FilterUppercase :: proc(Rune: rune) -> (rune, bool) {
+	return unicode.to_upper(Rune), true
+}
 
 // TextEdit is the editing state a TextInput keeps for one element: the caret and anchor as byte
 // offsets, the scroll and blink the paint reads, and the text Escape reverts to.
