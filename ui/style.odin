@@ -5,6 +5,61 @@ import "core:math"
 // Color is one RGBA color, one byte per channel.
 Color :: [4]u8
 
+// CornerRadius holds the radius of each corner, so one rectangle rounds them independently.
+CornerRadius :: struct {
+	TopLeft, TopRight, BottomRight, BottomLeft: f32,
+}
+
+// Gradient holds four corner colors: top left, top right, bottom right, bottom left.
+Gradient :: [4]Color
+
+// Background is how a box fills its rect: one flat color, or a gradient. Any corner radius
+// survives, since the gradient samples the position inside the rect, not the corners.
+Background :: union {
+	Color,
+	Gradient,
+}
+
+// BoxStyle is how a box paints itself. Any element carries one, leaf or container. Equal border
+// sides keep the corner radius; sides that differ are painted as plain edges.
+BoxStyle :: struct {
+	Background:   Background,
+	CornerRadius: CornerRadius,
+	BorderColor:  Color,
+	BorderWidth:  Edges,
+}
+
+// LabelStyle is what a label paints: the box it sits in and the text inside. `Color` and `Size`
+// are optional: omit them for white at 16, and pass `{}` to mean zero. `MaxLines` cuts the text
+// at a line limit, and `Ellipsis` ends the cut line with `…`.
+LabelStyle :: struct {
+	using Box:     BoxStyle,
+	Color:         Maybe(Color),
+	Size:          Maybe(f32),
+	Font:          Font,
+	Wrap:          WrapMode,
+	MaxLines:      u16,
+	Ellipsis:      bool,
+	TextAlign:     TextAlign,
+	VerticalAlign: VerticalAlign,
+}
+
+// ImageFit is how an image fills the rect it was given.
+ImageFit :: enum u8 {
+	Stretch,
+	Contain,
+	Cover,
+}
+
+// ImageStyle is what an image leaf paints: the box it sits in, the tint that multiplies the
+// texture and how the texture fills the rect. `Tint` is optional because its default is opaque
+// white.
+ImageStyle :: struct {
+	using Box: BoxStyle,
+	Tint:      Maybe(Color),
+	Fit:       ImageFit,
+}
+
 // Hex returns the color of the 0xRRGGBB value `Rgb`, with `Alpha` as its alpha channel.
 Hex :: #force_inline proc "contextless" (Rgb: u32, Alpha: u8 = 255) -> Color {
 	return {u8(Rgb >> 16), u8(Rgb >> 8), u8(Rgb), Alpha}
@@ -33,6 +88,11 @@ Hsv :: proc(H, S, V: f32, Alpha: u8 = 255) -> Color {
 		to_channel(hsv_channel(hue, sat, val, 1)),
 		Alpha,
 	}
+}
+
+// Corners returns a corner radius with `All` on every corner.
+Corners :: #force_inline proc "contextless" (All: f32) -> CornerRadius {
+	return {TopLeft = All, TopRight = All, BottomRight = All, BottomLeft = All}
 }
 
 // blend returns the mix of `A` and `B` at `T`, where 0 is `A` and 1 is `B`.

@@ -5,11 +5,79 @@ import "core:fmt"
 Vec2      :: [2]f32
 Rect      :: struct{ x, y, w, h: f32 }
 
-// ElementId is the stable key an element is declared under. In the queries, 0 targets the last
-// element declared.
-ElementId :: distinct u32
-
 Direction :: enum u8 { Row, Column }
+
+// Justify spreads the children along the container's main axis.
+Justify :: enum u8 {
+	Start,
+	Center,
+	End,
+	SpaceBetween,
+}
+
+// Align places the children along the container's cross axis.
+Align :: enum u8 {
+	Start,
+	Center,
+	End,
+	Stretch,
+}
+
+// Edges is one length per side of a box. It serves as padding and as the thickness of a
+// border, since both measure the four sides the same way.
+Edges :: struct {Left, Right, Top, Bottom: f32}
+
+// SizeKind is how a sizing treats its `Basis`.
+SizeKind :: enum u8 { Fit, Fixed }
+
+// Sizing is one axis of an element's size: a base from `Kind` and `Basis`, how it takes a
+// share of the parent's leftover space, and its bounds.
+Sizing :: struct {
+	Kind:   SizeKind,
+	Basis:  f32,
+	Grow:   f32,
+	Shrink: f32,
+	Min:    f32,
+	Max:    f32,
+}
+
+// Edge builds an Edges: Edge(All) puts `All` on every side, Edge(X, Y) puts `X` on the left
+// and right and `Y` on the top and bottom. A bare `Edges` literal names the sides.
+Edge :: proc{edge_all, edge_xy}
+
+// edge_all returns the edges with `All` on every side.
+@(private="file")
+edge_all :: #force_inline proc "contextless" (All: f32) -> Edges {
+	return {Left = All, Right = All, Top = All, Bottom = All}
+}
+
+// edge_xy returns the edges with `X` on the left and right and `Y` on the top and bottom.
+@(private="file")
+edge_xy :: #force_inline proc "contextless" (X, Y: f32) -> Edges {
+	return {Left = X, Right = X, Top = Y, Bottom = Y}
+}
+
+// Grow returns a sizing whose base is the content size, expanding to take a
+// `Weight`-proportional share of the parent's leftover space.
+Grow :: #force_inline proc "contextless" (Weight: f32 = 1, Shrink: f32 = 1) -> Sizing {
+	return {Kind = .Fit, Grow = Weight, Shrink = Shrink}
+}
+
+// Fill returns a sizing whose base is zero and that divides the parent's space by `Weight`,
+// ignoring content. Use it for equal-sized children.
+Fill :: #force_inline proc "contextless" (Weight: f32 = 1, Shrink: f32 = 1) -> Sizing {
+	return {Kind = .Fixed, Grow = Weight, Shrink = Shrink}
+}
+
+// Fit returns a sizing that hugs the content and never grows or shrinks.
+Fit :: #force_inline proc "contextless" () -> Sizing {
+	return {Kind = .Fit}
+}
+
+// Fixed returns a sizing of exactly `Px` that never grows or shrinks.
+Fixed :: #force_inline proc "contextless" (Px: f32) -> Sizing {
+	return {Kind = .Fixed, Basis = Px}
+}
 
 // RectContains reports whether the point lies inside the rect.
 RectContains :: #force_inline proc "contextless" (Rect: Rect, Point: Vec2) -> bool {
@@ -92,7 +160,7 @@ ImageContent :: struct {
 
 // CustomProc is the leaf whose look comes from the host: a callback run once the rect is known.
 // `User` points at the copy of the value the leaf declared, or is nil when it declared none.
-CustomProc :: #type proc(Rect: Rect, List: ^DrawList, Element: ElementId, User: rawptr)
+CustomProc :: #type proc(Rect: Rect, Element: ElementId, User: rawptr)
 
 // CustomContent is a CustomProc and where its user value sits in the frame buffer. The leaf copies
 // the value, so it outlives the call that declared it, and the size is whatever the value needs.
@@ -334,12 +402,13 @@ measure_width :: proc() #no_bounds_check {
 		case TextContent:
 			n.content_size, content.lines = label_measure(content, 0)
 		case CustomContent:
-		case ImageContent:
+		case ImageContent: {
 			n.content_size = {
 				content.handle.Width  / state.screen.dpi,
 				content.handle.Height / state.screen.dpi,
 			}
-		case:
+		}
+		case: {
 			sum, widest: f32
 			count := 0
 			for c := u32(i) + 1; c < n.subtree_end; c = next_sibling(c) {
@@ -350,6 +419,7 @@ measure_width :: proc() #no_bounds_check {
 				count += 1
 			}
 			n.content_size.x = sum + gaps(&n, count) if n.direction == .Row else widest
+		}
 		}
 		n.base.x = resolve_axis(n.config.Width, n.content_size.x + inset(&n).x)
 		if n.floating do n.rect.w = n.base.x
@@ -390,13 +460,14 @@ resolve_width :: proc(Width: f32) #no_bounds_check {
 measure_height :: proc() #no_bounds_check {
 	#reverse for &n, i in state.nodes {
 		switch &content in n.content {
-		case TextContent:
+		case TextContent: {
 			if content.wrap != .None || content.max_lines > 0 {
 				n.content_size, content.lines = label_measure(content, max(n.rect.w - inset(&n).x, 0))
 			}
+		}
 		case ImageContent:
 		case CustomContent:
-		case:
+		case: {
 			sum, tallest: f32
 			count := 0
 			for c := u32(i) + 1; c < n.subtree_end; c = next_sibling(c) {
@@ -407,6 +478,7 @@ measure_height :: proc() #no_bounds_check {
 				count += 1
 			}
 			n.content_size.y = sum + gaps(&n, count) if n.direction == .Column else tallest
+		}
 		}
 		n.base.y = resolve_axis(n.config.Height, n.content_size.y + inset(&n).y)
 		if n.floating do n.rect.h = n.base.y
@@ -505,7 +577,7 @@ place_floats :: proc() #no_bounds_check {
 
 		origin: Vec2
 		switch a in f.anchor {
-		case ElementId:
+		case ElementId: {
 			if a != 0 {
 				if i := node_of(a); i != NO_NODE {
 					origin = padding_origin(i)
@@ -513,7 +585,8 @@ place_floats :: proc() #no_bounds_check {
 					report(fmt.tprintf("ui: floating anchor %v not found", a))
 				}
 			}
-		case AnchorKind:
+		}
+		case AnchorKind: {
 			switch a {
 			case .Parent:
 				if f.parent != NO_NODE do origin = padding_origin(f.parent)
@@ -522,6 +595,7 @@ place_floats :: proc() #no_bounds_check {
 			case .Pointer:
 				origin = MousePos()
 			}
+		}
 		}
 
 		extent := Vec2{n.rect.w, n.rect.h}

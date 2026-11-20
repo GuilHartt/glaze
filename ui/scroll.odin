@@ -133,11 +133,12 @@ shows_bar :: proc(n: ^Node, Axis: ScrollAxis, content: Vec2) -> bool {
 	#partial switch scroll_mode(n, Axis) {
 	case .Always:
 		return true
-	case .Auto, .Reserve:
+	case .Auto, .Reserve: {
 		if Axis == .Vertical {
 			return content.y > max(n.rect.h - p.Top - p.Bottom - b.Top - b.Bottom, 0)
 		}
 		return content.x > max(n.rect.w - p.Left - p.Right - b.Left - b.Right, 0)
+	}
 	}
 	return false
 }

@@ -177,10 +177,10 @@ KeyReleased :: proc(Key: Key) -> bool {
 // ModifierDown reports whether any key mapped to `Mod` is held.
 ModifierDown :: proc(Mod: Modifier) -> bool {
 	switch Mod {
-		case .Shift: return KeyDown(.LeftShift) || KeyDown(.RightShift)
-		case .Ctrl:  return KeyDown(.LeftCtrl)  || KeyDown(.RightCtrl)
-		case .Alt:   return KeyDown(.LeftAlt)   || KeyDown(.RightAlt)
-		case .Super: return KeyDown(.LeftSuper) || KeyDown(.RightSuper)
+	case .Shift: return KeyDown(.LeftShift) || KeyDown(.RightShift)
+	case .Ctrl:  return KeyDown(.LeftCtrl)  || KeyDown(.RightCtrl)
+	case .Alt:   return KeyDown(.LeftAlt)   || KeyDown(.RightAlt)
+	case .Super: return KeyDown(.LeftSuper) || KeyDown(.RightSuper)
 	}
 	return false
 }
