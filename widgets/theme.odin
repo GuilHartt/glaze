@@ -65,7 +65,7 @@ Theme :: struct {
 	Button:       ButtonStyle,
 	Checkbox:     CheckboxStyle,
 	Slider:       SliderStyle,
-	TextInput:    TextInputStyle,
+	TextField:    TextStyle,
 }
 
 // DefaultTheme returns the built-in dark theme, with every widget default derived from its
@@ -138,7 +138,7 @@ DefaultTheme :: proc() -> Theme {
 		Gap         = 4,
 	}
 
-	value.TextInput = {
+	value.TextField = {
 		common      = default_widget_style(value),
 		Caret       = value.Color[.Text],
 		Selection   = ui.Hex(0x4C8DFF, 90),
@@ -166,11 +166,11 @@ CurrentTheme :: proc() -> Theme {
 // turns off, and closes it at the end of the block.
 @(private)
 @(require_results, deferred_none = ui.Close)
-widget_box :: proc(Config: ui.ContainerConfig, Disabled: bool) -> bool {
+widget_box :: proc(Config: ui.ContainerConfig, Disabled: bool, Direction: ui.Direction = .Row) -> bool {
 	config := Config
 	config.Hit = .Ignore if Disabled else .Stop
 	config.Focusable = !Disabled
-	ui.Open(config)
+	ui.Open(config, {}, Direction)
 	return true
 }
 
