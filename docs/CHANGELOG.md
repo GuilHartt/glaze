@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.9.0] - 2026-11-21
+
+### Added
+
+* `widgets`, a layer on the public surface: `Button`, `Checkbox`, `HSlider`, `VSlider`, `TextInput` and `TextEdit`
+* `Theme`, `DefaultTheme`, `CurrentTheme` and `SetTheme`, one theme for the whole widget layer
+* `TextEdit`, a multi-line editor that wraps, takes tabs and scrolls through the layout
+* `TextInput`, one line, with `Mask`, `ReadOnly`, `MaxChars` and a `CharFilter`
+* `FilterDigits`, `FilterDecimal`, `FilterHexadecimal` and `FilterUppercase`
+* `Custom`, a leaf that paints its own content, with `CustomProc` and `CustomContent`
+* `LabelStyle`, `ImageStyle` and `BoxStyle`, one style per element
+* `ContainerConfig` and `ElementConfig`, one config per kind
+* `VerticalAlign`, and `MaxLines` with `Ellipsis` on a label
+* `InnerRect`, the box a node places its children in
+* `SetAntialias`, `PushAntialias` and `PopAntialias`, so the host or a scope decides whether a shape feathers
+* `ClaimTab`, which keeps a plain Tab for one element
+* `DestroyProc`, so the state stored under an id is freed with its entry
+* `SetKeyRepeat`, the delay and the rate a held key repeats at
+
+### Changed
+
+* ids come from the call site, so an element inside a conditional no longer shifts the ids below it
+* `Storage` is an open-addressed table keyed by id and type, and the dead entries leave by a sweep with a fixed cost per frame
+* the tree, the input and the state are private
+* the text surface takes `string`, and a backend converts to `cstring` at its own boundary
+
+### Removed
+
+* `Paint`, replaced by `Custom`
+* `PaintProc`, replaced by `CustomProc`
+* `LayoutConfig`, replaced by `ContainerConfig`
+* `ImageConfig`, since `ElementConfig` and `ImageStyle` carry it
+* `Screen`, `Node`, `State`, `Input`, `Content`, `Placement` and `Time`, which live inside the package now
+
+### Fixed
+
+* a tab measures and paints as four spaces instead of a missing glyph
+* a reserved scroll bar hides when the content fits
+* a full circle no longer closes on a duplicate point
+
 ## [0.8.0] - 2026-11-17
 
 ### Added
