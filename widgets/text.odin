@@ -75,6 +75,7 @@ TextKeys :: struct {
 	Filter:   CharFilter,
 	ReadOnly: bool,
 	Mask:     rune,
+	First:    bool,
 }
 
 // selection returns the selected byte range, ordered so start <= end.

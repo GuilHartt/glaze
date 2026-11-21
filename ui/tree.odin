@@ -98,6 +98,7 @@ State :: struct {
 	press_pos:   [MouseButton]Vec2,
 	click_ids:   [MouseButton]ElementId,
 	focus_id:    ElementId,
+	tab_claim:   ElementId,
 	drag:        ScrollDrag,
 	drag_drop:   DragDrop,
 	cursor:      CursorIcon,

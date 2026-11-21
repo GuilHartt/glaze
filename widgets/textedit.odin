@@ -45,6 +45,7 @@ TextEdit :: proc(
 
 		edit := ui.Storage(element, text_state, destroy_text_state)
 		focused := !Disabled && ui.Focused(element)
+		if focused do ui.ClaimTab(element)
 
 		if MaxChars > 0 && utf8.rune_count(Text^[:]) > MaxChars {
 			resize(Text, len(rune_prefix(string(Text^[:]), MaxChars)))
@@ -70,7 +71,7 @@ TextEdit :: proc(
 
 			caret_before, anchor_before := edit.Caret, edit.Anchor
 			changed, submitted = text_edit_keys(Text, edit, lines, view, style.Font, style.FontSize, {
-				MaxChars = MaxChars, Filter = Filter, ReadOnly = ReadOnly,
+				MaxChars = MaxChars, Filter = Filter, ReadOnly = ReadOnly, First = first,
 			})
 			if changed do block, lines = text_edit_lines(Text^[:], edit, view.w, style.Font, style.FontSize, wrap)
 
@@ -252,6 +253,8 @@ text_edit_keys :: proc(
 			move_caret(State, int(line.Start), shift)
 		case ui.KeyPressed(.End):
 			move_caret(State, int(line.End), shift)
+		case ui.KeyPressed(.Tab, true):
+			if !Keys.ReadOnly && !Keys.First && !shift do changed = insert_text(Text, State, "\t", Keys.MaxChars)
 		case ui.KeyPressed(.Backspace, true):
 			if !Keys.ReadOnly do changed = erase(Text, State, .RuneBack)
 		case ui.KeyPressed(.Delete, true):

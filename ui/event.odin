@@ -94,6 +94,12 @@ ClearFocus :: proc() {
 	state.focus_id = 0
 }
 
+// ClaimTab makes `Element` keep a plain Tab as input instead of letting it move the focus, until the
+// next frame. Ctrl+Tab and Shift+Tab still walk. An `Element` of 0 targets the last element declared.
+ClaimTab :: proc(Element: ElementId = 0) {
+	state.tab_claim = target_id(Element)
+}
+
 // Activated reports whether `Element` was clicked or, while focused, activated by Enter or Space.
 // It is the one test a button needs. An `Element` of 0 targets the last element declared.
 Activated :: proc(Element: ElementId = 0, Button: MouseButton = .Left) -> bool {
@@ -263,7 +269,8 @@ next_focus :: proc(Current: ElementId, Back: bool) -> ElementId {
 }
 
 // focus_begin takes the focus for a left press on a focusable element, clears it on a press
-// anywhere else, and moves it with Tab. Shift+Tab walks back.
+// anywhere else, and moves it with Tab. Shift+Tab walks back, and an element that claimed the Tab
+// keeps it.
 @(private)
 focus_begin :: proc() {
 	if MousePressed(.Left) {
@@ -274,9 +281,14 @@ focus_begin :: proc() {
 		}
 	}
 
-	if KeyPressed(.Tab) {
-		state.focus_id = next_focus(state.focus_id, ModifierDown(.Shift))
+	if !KeyPressed(.Tab) do return
+
+	// Ctrl and Shift always walk the focus, so a tab-taking element is still reachable.
+	if !ModifierDown(.Ctrl) && !ModifierDown(.Shift) &&
+	   state.focus_id != 0 && state.tab_claim == state.focus_id {
+		return
 	}
+	state.focus_id = next_focus(state.focus_id, ModifierDown(.Shift))
 }
 
 // PAYLOAD_MAX is the largest drag payload that travels inline, in bytes. Larger data goes by a
