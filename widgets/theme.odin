@@ -166,23 +166,23 @@ CurrentTheme :: proc() -> Theme {
 // turns off, and closes it at the end of the block.
 @(private)
 @(require_results, deferred_none = ui.Close)
-widget_box :: proc(Config: ui.ContainerConfig, Disabled: bool, Direction: ui.Direction = .Row) -> bool {
+widget_box :: proc(Config: ui.ContainerConfig, Disabled: bool, Direction: ui.Direction = .Row, loc := #caller_location) -> bool {
 	config := Config
 	config.Hit = .Ignore if Disabled else .Stop
 	config.Focusable = !Disabled
-	ui.Open(config, {}, Direction)
+	ui.Open(config, {}, Direction, loc)
 	return true
 }
 
-// widget_state picks the state a widget paints for from the interaction of `Element`. A widget
-// is pressed only while the pointer holds it, not when the keyboard activates it.
+// widget_state picks the state a widget paints for from the interaction of `Element`. `Pressed` says
+// whether a press paints, which a text field turns off since a click only places the caret.
 @(private)
-widget_state :: proc(Element: ui.ElementId, Disabled: bool) -> WidgetState {
+widget_state :: proc(Element: ui.ElementId, Disabled: bool, Pressed: bool = true) -> WidgetState {
 	switch {
-	case Disabled:            return .Disabled
-	case ui.Pressed(Element): return .Pressed
-	case ui.Hovered(Element): return .Hovered
-	case ui.Focused(Element): return .Focused
+	case Disabled:                       return .Disabled
+	case Pressed && ui.Pressed(Element): return .Pressed
+	case ui.Hovered(Element):            return .Hovered
+	case ui.Focused(Element):            return .Focused
 	}
 	return .Normal
 }

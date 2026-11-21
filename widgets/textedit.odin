@@ -3,15 +3,13 @@ package widgets
 import "core:unicode/utf8"
 import ui "../ui"
 
-// TextEdit draws the UTF-8 text of `State` as a multi-line editor, reporting a change and a submit.
-// The text wraps to the box, or scrolls horizontally when `Wrap` is off, through the layout system,
-// which owns the offset, the bars and the wheel; the widget owns only the text layout. Enter opens
-// a new line, Ctrl+Enter submits, and Escape reverts.
+// TextEdit draws the UTF-8 buffer `Text` as a multi-line editor, reporting a change and a submit.
+// The text wraps, or scrolls horizontally when `Wrap` is off, through the layout system, which owns
+// the offset and the bars. Enter opens a new line, Ctrl+Enter submits, and Escape reverts.
 TextEdit :: proc(
-	State:       ^TextState,
+	Text:        ^[dynamic]u8,
 	Width:       ui.Sizing = {Kind = .Fixed, Grow = 1, Shrink = 1},
 	Height:      ui.Sizing = {},
-	Rows:        u16 = 4,
 	Placeholder: string = "",
 	MaxChars:    int = 0,
 	Filter:      CharFilter = nil,
@@ -19,61 +17,66 @@ TextEdit :: proc(
 	Wrap:        bool = false,
 	Style:       ^TextStyle = nil,
 	Disabled:    bool = false,
+	loc := #caller_location,
 ) -> (changed, submitted: bool) {
 	// The bar sits this far from the box edge, since the layout adds its strip on top of the pad.
 	BAR_EDGE :: f32(4)
+
+	// A box with no Height takes this many rows.
+	DEFAULT_ROWS :: 4
 
 	style := Style if Style != nil else &theme.TextField
 	lh := line_height(style.Font, style.FontSize)
 	wrap := ui.WrapMode.Word if Wrap else .None
 
 	height := Height
-	if height == {} do height = ui.Fixed(field_height(style, int(Rows)))
+	if height == {} do height = ui.Fixed(field_height(style, DEFAULT_ROWS))
 
 	if widget_box({
 		Width  = Width,
 		Height = height,
 		Pad    = {Left = style.Pad.Left, Right = BAR_EDGE, Top = style.Pad.Top, Bottom = style.Pad.Bottom},
 		Scroll = {Vertical = .Reserve, Horizontal = .Auto},
-	}, Disabled, .Column) {
+	}, Disabled, .Column, loc) {
 		element := ui.LastId()
-		state := widget_state(element, Disabled)
+		state := widget_state(element, Disabled, Pressed = false)
 		ui.SetStyle(element, widget_style(&style.common, state, ui.Focused(element)))
 		widget_cursor(element, Disabled, .IBeam)
 
+		edit := ui.Storage(element, text_state, destroy_text_state)
 		focused := !Disabled && ui.Focused(element)
 
-		if MaxChars > 0 && utf8.rune_count(State.Text[:]) > MaxChars {
-			resize(&State.Text, len(rune_prefix(string(State.Text[:]), MaxChars)))
+		if MaxChars > 0 && utf8.rune_count(Text^[:]) > MaxChars {
+			resize(Text, len(rune_prefix(string(Text^[:]), MaxChars)))
 		}
-		State.Caret = clamp(State.Caret, 0, len(State.Text))
-		State.Anchor = clamp(State.Anchor, 0, len(State.Text))
+		edit.Caret = clamp(edit.Caret, 0, len(Text))
+		edit.Anchor = clamp(edit.Anchor, 0, len(Text))
 
 		// The view the layout gave the text last frame, already inside the padding, the border and
 		// the strips of the bars that scroll.
 		view := ui.InnerRect(element)
-		block, lines := text_edit_lines(State, view.w, style.Font, style.FontSize, wrap)
+		block, lines := text_edit_lines(Text^[:], edit, view.w, style.Font, style.FontSize, wrap)
 
 		if focused {
-			first := !State.Active
+			first := !edit.Active
 			if first {
-				clear(&State.Original)
-				append(&State.Original, ..State.Text[:])
-				State.Active = true
+				clear(&edit.Original)
+				append(&edit.Original, ..Text^[:])
+				edit.Active = true
 			}
 
-			State.Blink += ui.DeltaTime()
-			if State.Blink >= 1 do State.Blink -= 1
+			edit.Blink += ui.DeltaTime()
+			if edit.Blink >= 1 do edit.Blink -= 1
 
-			caret_before, anchor_before := State.Caret, State.Anchor
-			changed, submitted = text_edit_keys(State, lines, view, style.Font, style.FontSize, {
+			caret_before, anchor_before := edit.Caret, edit.Anchor
+			changed, submitted = text_edit_keys(Text, edit, lines, view, style.Font, style.FontSize, {
 				MaxChars = MaxChars, Filter = Filter, ReadOnly = ReadOnly,
 			})
-			if changed do block, lines = text_edit_lines(State, view.w, style.Font, style.FontSize, wrap)
+			if changed do block, lines = text_edit_lines(Text^[:], edit, view.w, style.Font, style.FontSize, wrap)
 
 			// A press that lands on a bar strip belongs to the layout, not to the caret.
-			if ui.MousePressed(.Left) do State.Selecting = ui.Pressed(element) && over_text(view, ui.MousePos(), !Wrap)
-			if ui.Pressed(element) && State.Selecting {
+			if ui.MousePressed(.Left) do edit.Selecting = ui.Pressed(element) && over_text(view, ui.MousePos(), !Wrap)
+			if ui.Pressed(element) && edit.Selecting {
 				offset := ui.ScrollOffset(element)
 				if ui.MouseDown(.Left) && !ui.MousePressed(.Left) do offset = autoscroll(element, offset, view, block, lh)
 
@@ -83,36 +86,36 @@ TextEdit :: proc(
 				local.x = clamp(local.x, 0, max(view.w - 1, 0))
 				local.y = clamp(local.y, 0, max(view.h - 1, 0))
 
-				at := offset_at(string(State.Text[:]), lines, local + offset, style.Font, style.FontSize, lh)
-				move_caret(State, at, !ui.MousePressed(.Left) || ui.ModifierDown(.Shift))
-				State.Blink = 0
+				at := offset_at(string(Text^[:]), lines, local + offset, style.Font, style.FontSize, lh)
+				move_caret(edit, at, !ui.MousePressed(.Left) || ui.ModifierDown(.Shift))
+				edit.Blink = 0
 			}
 
-			if ui.DoubleClicked(element) && State.Selecting {
-				State.Anchor, State.Caret = word_span(State.Text[:], State.Caret)
-				State.Blink = 0
+			if ui.DoubleClicked(element) && edit.Selecting {
+				edit.Anchor, edit.Caret = word_span(Text^[:], edit.Caret)
+				edit.Blink = 0
 			}
 
 			// The view follows the caret only when the caret moved, so the wheel can take it away,
 			// and never while the pointer owns the caret, or the pointer would map further down on
 			// every frame.
-			dragging := State.Selecting && ui.MouseDown(.Left)
-			moved := changed || State.Caret != caret_before || State.Anchor != anchor_before
+			dragging := edit.Selecting && ui.MouseDown(.Left)
+			moved := changed || edit.Caret != caret_before || edit.Anchor != anchor_before
 			if !dragging && (moved || first) {
-				caret := caret_point(string(State.Text[:]), lines, State.Caret, style.Font, style.FontSize, lh)
+				caret := caret_point(string(Text^[:]), lines, edit.Caret, style.Font, style.FontSize, lh)
 				scroll_to_caret(element, caret, {1, lh}, {view.w, view.h})
 			}
 		} else {
-			State.Blink = 0
-			State.Active = false
-			State.Selecting = false
+			edit.Blink = 0
+			edit.Active = false
+			edit.Selecting = false
 		}
 
 		visual := TextEditVisual{
 			Lines            = lines,
-			Text             = string(State.Text[:]),
-			Caret            = State.Caret,
-			Anchor           = State.Anchor,
+			Text             = string(Text^[:]),
+			Caret            = edit.Caret,
+			Anchor           = edit.Anchor,
 			View             = view,
 			Font             = style.Font,
 			Size             = style.FontSize,
@@ -121,7 +124,7 @@ TextEdit :: proc(
 			SelectColor      = style.Selection,
 			Placeholder      = Placeholder,
 			PlaceholderColor = style.Placeholder,
-			CaretOn          = focused && State.Blink < 0.5,
+			CaretOn          = focused && edit.Blink < 0.5,
 		}
 
 		ui.Custom(draw_text_edit, {Width = ui.Fixed(content_width(block.x, view.w)), Height = ui.Fixed(block.y), Hit = .Ignore}, {}, visual)
@@ -149,17 +152,17 @@ TextEditVisual :: struct {
 	CaretOn:          bool,
 }
 
-// text_edit_lines returns the lines the text of `State` wraps into at `Width` in `Mode`, rebuilding
-// the cache in `State` only when the text or the geometry changed.
+// text_edit_lines returns the lines `Text` wraps into at `Width` in `Mode`, rebuilding the cache in
+// `State` only when the text or the geometry changed.
 @(private="file")
-text_edit_lines :: proc(State: ^TextState, Width: f32, Font: ui.Font, Size: f32, Mode: ui.WrapMode) -> (block: ui.Vec2, lines: []ui.Line) {
+text_edit_lines :: proc(Text: []u8, State: ^text_state, Width: f32, Font: ui.Font, Size: f32, Mode: ui.WrapMode) -> (block: ui.Vec2, lines: []ui.Line) {
 	if State.Width != Width || State.Font != Font || State.Size != Size || State.Wrap != Mode ||
-	   string(State.Source[:]) != string(State.Text[:]) {
+	   string(State.Source[:]) != string(Text) {
 		clear(&State.Source)
-		append(&State.Source, ..State.Text[:])
+		append(&State.Source, ..Text)
 		State.Width, State.Font, State.Size, State.Wrap = Width, Font, Size, Mode
 
-		wrapped := ui.WrapText(string(State.Text[:]), Font, Size, Mode, Width)
+		wrapped := ui.WrapText(string(Text), Font, Size, Mode, Width)
 		if len(wrapped) == 0 do wrapped = empty_lines[:]
 
 		clear(&State.Lines)
@@ -190,7 +193,8 @@ over_text :: proc(View: ui.Rect, Pos: ui.Vec2, Horizontal: bool) -> bool {
 // and a submit.
 @(private="file")
 text_edit_keys :: proc(
-	State: ^TextState,
+	Text:  ^[dynamic]u8,
+	State: ^text_state,
 	Lines: []ui.Line,
 	View:  ui.Rect,
 	Font:  ui.Font,
@@ -204,25 +208,25 @@ text_edit_keys :: proc(
 	if (ui.ModifierDown(.Ctrl) || ui.ModifierDown(.Super)) && !ui.ModifierDown(.Alt) {
 		switch {
 		case ui.KeyPressed(.A):
-			State.Anchor, State.Caret = 0, len(State.Text)
+			State.Anchor, State.Caret = 0, len(Text)
 		case ui.KeyPressed(.C):
-			copy_selection(State)
+			copy_selection(Text^[:], State)
 		case ui.KeyPressed(.X):
-			if !Keys.ReadOnly && copy_selection(State) do changed = erase(State, .RuneBack)
+			if !Keys.ReadOnly && copy_selection(Text^[:], State) do changed = erase(Text, State, .RuneBack)
 		case ui.KeyPressed(.V):
-			if !Keys.ReadOnly do changed = insert_text(State, input_text(ui.GetClipboard(), Keys), Keys.MaxChars)
+			if !Keys.ReadOnly do changed = insert_text(Text, State, input_text(ui.GetClipboard(), Keys), Keys.MaxChars)
 		case ui.KeyPressed(.Backspace, true):
-			if !Keys.ReadOnly do changed = erase(State, .WordBack)
+			if !Keys.ReadOnly do changed = erase(Text, State, .WordBack)
 		case ui.KeyPressed(.Delete, true):
-			if !Keys.ReadOnly do changed = erase(State, .WordForward)
+			if !Keys.ReadOnly do changed = erase(Text, State, .WordForward)
 		case ui.KeyPressed(.Left, true):
-			step_caret(State, .WordBack, shift)
+			step_caret(Text^[:], State, .WordBack, shift)
 		case ui.KeyPressed(.Right, true):
-			step_caret(State, .WordForward, shift)
+			step_caret(Text^[:], State, .WordForward, shift)
 		case ui.KeyPressed(.Home):
 			move_caret(State, 0, shift)
 		case ui.KeyPressed(.End):
-			move_caret(State, len(State.Text), shift)
+			move_caret(State, len(Text), shift)
 		case ui.KeyPressed(.Enter):
 			submitted = true
 			State.Active = false
@@ -233,32 +237,32 @@ text_edit_keys :: proc(
 		page := max(int(View.h / lh) - 1, 1)
 		switch {
 		case ui.KeyPressed(.Left, true):
-			step_caret(State, .RuneBack, shift)
+			step_caret(Text^[:], State, .RuneBack, shift)
 		case ui.KeyPressed(.Right, true):
-			step_caret(State, .RuneForward, shift)
+			step_caret(Text^[:], State, .RuneForward, shift)
 		case ui.KeyPressed(.Up, true):
-			move_line(State, Lines, -1, shift, Font, Size)
+			move_line(string(Text^[:]), Lines, State, -1, shift, Font, Size)
 		case ui.KeyPressed(.Down, true):
-			move_line(State, Lines, 1, shift, Font, Size)
+			move_line(string(Text^[:]), Lines, State, 1, shift, Font, Size)
 		case ui.KeyPressed(.PageUp, true):
-			move_line(State, Lines, -page, shift, Font, Size)
+			move_line(string(Text^[:]), Lines, State, -page, shift, Font, Size)
 		case ui.KeyPressed(.PageDown, true):
-			move_line(State, Lines, page, shift, Font, Size)
+			move_line(string(Text^[:]), Lines, State, page, shift, Font, Size)
 		case ui.KeyPressed(.Home):
 			move_caret(State, int(line.Start), shift)
 		case ui.KeyPressed(.End):
 			move_caret(State, int(line.End), shift)
 		case ui.KeyPressed(.Backspace, true):
-			if !Keys.ReadOnly do changed = erase(State, .RuneBack)
+			if !Keys.ReadOnly do changed = erase(Text, State, .RuneBack)
 		case ui.KeyPressed(.Delete, true):
-			if !Keys.ReadOnly do changed = erase(State, .RuneForward)
+			if !Keys.ReadOnly do changed = erase(Text, State, .RuneForward)
 		case ui.KeyPressed(.Enter):
-			changed = insert_text(State, "\n", Keys.MaxChars)
+			changed = insert_text(Text, State, "\n", Keys.MaxChars)
 		case ui.KeyPressed(.Escape):
-			if !Keys.ReadOnly && string(State.Text[:]) != string(State.Original[:]) {
-				clear(&State.Text)
-				append(&State.Text, ..State.Original[:])
-				State.Caret, State.Anchor = len(State.Text), len(State.Text)
+			if !Keys.ReadOnly && string(Text^[:]) != string(State.Original[:]) {
+				clear(Text)
+				append(Text, ..State.Original[:])
+				State.Caret, State.Anchor = len(Text^), len(Text^)
 				State.Want = -1
 				changed = true
 			}
@@ -267,7 +271,7 @@ text_edit_keys :: proc(
 		}
 
 		if typed := ui.TextInput(); !Keys.ReadOnly && len(typed) > 0 {
-			changed = insert_text(State, input_text(typed, Keys), Keys.MaxChars) || changed
+			changed = insert_text(Text, State, input_text(typed, Keys), Keys.MaxChars) || changed
 		}
 	}
 

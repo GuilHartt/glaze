@@ -37,11 +37,10 @@ FilterUppercase :: proc(Rune: rune) -> (rune, bool) {
 	return unicode.to_upper(Rune), true
 }
 
-// TextState is the text one text widget edits and the state it keeps between frames: the caret and
-// the anchor as byte offsets, the blink, the buffer Escape reverts to, and what the widget derives
-// from the text. Zero it once, keep it alive while the field exists, and pass it every frame.
-TextState :: struct {
-	Text:      [dynamic]u8,
+// text_state is what a text widget keeps between frames, keyed by the element id: the caret and
+// the anchor as byte offsets, the blink, and what the widget derives from the caller's text.
+@(private)
+text_state :: struct {
 	Caret:     int,
 	Anchor:    int,
 	Want:      f32,
@@ -59,17 +58,17 @@ TextState :: struct {
 	Wrap:      ui.WrapMode,
 }
 
-// DestroyTextState frees the buffers a TextState keeps. Call it once the field is gone.
-DestroyTextState :: proc(State: ^TextState) {
-	delete(State.Text)
+// destroy_text_state frees the buffers a text state keeps, so the storage can drop it.
+@(private)
+destroy_text_state :: proc(Value: rawptr) {
+	State := (^text_state)(Value)
 	delete(State.Original)
 	delete(State.Display)
 	delete(State.Source)
 	delete(State.Lines)
-	State^ = {}
 }
 
-// TextKeys is what a keymap needs besides the state.
+// TextKeys is what a keymap needs besides the text and the state.
 @(private)
 TextKeys :: struct {
 	MaxChars: int,
@@ -80,14 +79,14 @@ TextKeys :: struct {
 
 // selection returns the selected byte range, ordered so start <= end.
 @(private="file")
-selection :: proc(State: ^TextState) -> (start, end: int) {
+selection :: proc(State: ^text_state) -> (start, end: int) {
 	return min(State.Anchor, State.Caret), max(State.Anchor, State.Caret)
 }
 
 // move_caret places the caret at `At`, keeping the anchor when `Select` is set, and drops the
 // column a vertical move was holding.
 @(private)
-move_caret :: proc(State: ^TextState, At: int, Select: bool) {
+move_caret :: proc(State: ^text_state, At: int, Select: bool) {
 	if !Select do State.Anchor = At
 	State.Caret = At
 	State.Want = -1
@@ -100,7 +99,7 @@ TextStep :: enum u8 { RuneBack, RuneForward, WordBack, WordForward }
 // step_caret moves the caret one `Step`, collapsing the selection to its edge when `Select`
 // is off, so the move starts from there instead of stepping.
 @(private)
-step_caret :: proc(State: ^TextState, Step: TextStep, Select: bool) {
+step_caret :: proc(Text: []u8, State: ^text_state, Step: TextStep, Select: bool) {
 	if !Select {
 		if start, end := selection(State); start != end {
 			back := Step == .RuneBack || Step == .WordBack
@@ -109,25 +108,23 @@ step_caret :: proc(State: ^TextState, Step: TextStep, Select: bool) {
 		}
 	}
 
-	text := State.Text[:]
 	switch Step {
-	case .RuneBack:    move_caret(State, rune_before(text, State.Caret), Select)
-	case .RuneForward: move_caret(State, rune_after(text, State.Caret), Select)
-	case .WordBack:    move_caret(State, word_step(text, State.Caret, false), Select)
-	case .WordForward: move_caret(State, word_step(text, State.Caret, true), Select)
+	case .RuneBack:    move_caret(State, rune_before(Text, State.Caret), Select)
+	case .RuneForward: move_caret(State, rune_after(Text, State.Caret), Select)
+	case .WordBack:    move_caret(State, word_step(Text, State.Caret, false), Select)
+	case .WordForward: move_caret(State, word_step(Text, State.Caret, true), Select)
 	}
 }
 
 // move_line moves the caret one line up or down, holding the column it had.
 @(private)
-move_line :: proc(State: ^TextState, Lines: []ui.Line, Delta: int, Select: bool, Font: ui.Font, Size: f32) {
-	text := string(State.Text[:])
+move_line :: proc(Text: string, Lines: []ui.Line, State: ^text_state, Delta: int, Select: bool, Font: ui.Font, Size: f32) {
 	lh := line_height(Font, Size)
 	want := State.Want
-	if want < 0 do want = caret_point(text, Lines, State.Caret, Font, Size, lh).x
+	if want < 0 do want = caret_point(Text, Lines, State.Caret, Font, Size, lh).x
 
 	line := Lines[clamp(line_at(Lines, State.Caret) + Delta, 0, len(Lines) - 1)]
-	move_caret(State, int(line.Start) + index_at_x(text[int(line.Start):int(line.End)], want, Font, Size), Select)
+	move_caret(State, int(line.Start) + index_at_x(Text[int(line.Start):int(line.End)], want, Font, Size), Select)
 	State.Want = want
 }
 
@@ -219,19 +216,19 @@ rune_prefix :: proc(Value: string, Count: int) -> string {
 // insert_text replaces the selection with `Value` and places the caret after it, keeping at
 // most `MaxChars` runes in the text. Zero means no limit.
 @(private)
-insert_text :: proc(State: ^TextState, Value: string, MaxChars: int) -> bool {
+insert_text :: proc(Text: ^[dynamic]u8, State: ^text_state, Value: string, MaxChars: int) -> bool {
 	if len(Value) == 0 do return false
 
 	start, end := selection(State)
 	value := Value
 	if MaxChars > 0 {
-		room := MaxChars - (utf8.rune_count(State.Text[:]) - utf8.rune_count(State.Text[start:end]))
+		room := MaxChars - (utf8.rune_count(Text^[:]) - utf8.rune_count(Text^[start:end]))
 		if room <= 0 do return false
 		value = rune_prefix(value, room)
 	}
 
-	remove_range(&State.Text, start, end)
-	inject_at(&State.Text, start, value)
+	remove_range(Text, start, end)
+	inject_at(Text, start, value)
 	State.Caret = start + len(value)
 	State.Anchor = State.Caret
 	State.Want = -1
@@ -241,19 +238,19 @@ insert_text :: proc(State: ^TextState, Value: string, MaxChars: int) -> bool {
 // erase removes the selection, or one `Step` from the caret when there is none, and reports
 // whether it removed anything.
 @(private)
-erase :: proc(State: ^TextState, Step: TextStep) -> bool {
+erase :: proc(Text: ^[dynamic]u8, State: ^text_state, Step: TextStep) -> bool {
 	start, end := selection(State)
 	if start == end {
 		switch Step {
-		case .RuneBack:    start = rune_before(State.Text[:], State.Caret)
-		case .RuneForward: end = rune_after(State.Text[:], State.Caret)
-		case .WordBack:    start = word_step(State.Text[:], State.Caret, false)
-		case .WordForward: end = word_step(State.Text[:], State.Caret, true)
+		case .RuneBack:    start = rune_before(Text^[:], State.Caret)
+		case .RuneForward: end = rune_after(Text^[:], State.Caret)
+		case .WordBack:    start = word_step(Text^[:], State.Caret, false)
+		case .WordForward: end = word_step(Text^[:], State.Caret, true)
 		}
 	}
 	if start == end do return false
 
-	remove_range(&State.Text, start, end)
+	remove_range(Text, start, end)
 	State.Caret = start
 	State.Anchor = start
 	State.Want = -1
@@ -262,10 +259,10 @@ erase :: proc(State: ^TextState, Step: TextStep) -> bool {
 
 // copy_selection copies the selected bytes to the clipboard and reports whether there were any.
 @(private)
-copy_selection :: proc(State: ^TextState) -> bool {
+copy_selection :: proc(Text: []u8, State: ^text_state) -> bool {
 	start, end := selection(State)
 	if start == end do return false
-	ui.SetClipboard(string(State.Text[start:end]))
+	ui.SetClipboard(string(Text[start:end]))
 	return true
 }
 

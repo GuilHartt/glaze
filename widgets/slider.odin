@@ -1,6 +1,7 @@
 package widgets
 
 import "base:intrinsics"
+import "base:runtime"
 import ui "../ui"
 
 // SliderStyle is the slider's colors per state, plus the focus ring and the metrics. `Height` is
@@ -25,9 +26,10 @@ HSlider :: proc(
 	Width:    ui.Sizing = {Kind = .Fixed, Grow = 1, Shrink = 1},
 	Style:    ^SliderStyle = nil,
 	Disabled: bool = false,
+	loc := #caller_location,
 ) -> bool where intrinsics.type_is_ordered_numeric(T) {
 	style := Style if Style != nil else &theme.Slider
-	return slider(Value, Min, Max, Step, Width, ui.Fixed(style.Height), .Horizontal, style, Disabled)
+	return slider(Value, Min, Max, Step, Width, ui.Fixed(style.Height), .Horizontal, style, Disabled, loc)
 }
 
 // VSlider is HSlider on the vertical axis: `Min` sits at the bottom and `Max` at the top. `Height`
@@ -39,9 +41,10 @@ VSlider :: proc(
 	Height:   ui.Sizing = {Kind = .Fixed, Grow = 1, Shrink = 1},
 	Style:    ^SliderStyle = nil,
 	Disabled: bool = false,
+	loc := #caller_location,
 ) -> bool where intrinsics.type_is_ordered_numeric(T) {
 	style := Style if Style != nil else &theme.Slider
-	return slider(Value, Min, Max, Step, ui.Fixed(style.Height), Height, .Vertical, style, Disabled)
+	return slider(Value, Min, Max, Step, ui.Fixed(style.Height), Height, .Vertical, style, Disabled, loc)
 }
 
 @(private="file")
@@ -61,11 +64,12 @@ slider :: proc(
 	Axis:          SliderAxis,
 	Style:         ^SliderStyle,
 	Disabled:      bool,
+	loc:           runtime.Source_Code_Location,
 ) -> bool where intrinsics.type_is_ordered_numeric(T) {
 	low, high := f64(Min), f64(Max)
 	value := f64(Value^)
 
-	if widget_box({Width = Width, Height = Height}, Disabled) {
+	if widget_box({Width = Width, Height = Height}, Disabled, loc = loc) {
 		element := ui.LastId()
 		state := widget_state(element, Disabled)
 		widget_cursor(element, Disabled, .ResizeEW if Axis == .Horizontal else .ResizeNS)

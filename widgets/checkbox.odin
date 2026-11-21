@@ -12,10 +12,18 @@ CheckboxStyle :: struct {
 }
 
 // Checkbox toggles the bool `Checked` points to and returns whether it changed this frame.
-Checkbox :: proc(Text: string, Checked: ^bool, Width: ui.Sizing = {}, Height: ui.Sizing = {}, Style: ^CheckboxStyle = nil, Disabled: bool = false) -> bool {
+Checkbox :: proc(
+	Text:     string,
+	Checked:  ^bool,
+	Width:    ui.Sizing = {},
+	Height:   ui.Sizing = {},
+	Style:    ^CheckboxStyle = nil,
+	Disabled: bool = false,
+	loc := #caller_location,
+) -> bool {
 	style := Style if Style != nil else &theme.Checkbox
 
-	if widget_box({Width = Width, Height = Height, Pad = style.Pad, Gap = style.Gap, Justify = .Start, Align = .Center}, Disabled) {
+	if widget_box({Width = Width, Height = Height, Pad = style.Pad, Gap = style.Gap, Justify = .Start, Align = .Center}, Disabled, loc = loc) {
 		element := ui.LastId()
 		state := widget_state(element, Disabled)
 		widget_cursor(element, Disabled)
