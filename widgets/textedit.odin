@@ -301,6 +301,8 @@ draw_text_edit :: proc(Rect: ui.Rect, Element: ui.ElementId, User: rawptr) {
 		end := clamp(max(visual.Anchor, visual.Caret), 0, len(visual.Text))
 
 		if start != end {
+			// The selection is a solid block, so its lines must not feather into each other.
+			ui.PushAntialias(false)
 			for i in first ..< last {
 				line := visual.Lines[i]
 				from := max(int(line.Start), start)
