@@ -354,13 +354,14 @@ edge_distance :: proc(Value, Lo, Hi: f32) -> f32 {
 // autoscroll moves the view of `Element` while the pointer is dragged past `View`, and returns the
 // offset the drag maps through. `Block` is the content size.
 @(private)
-autoscroll :: proc(Element: ui.ElementId, Offset: ui.Vec2, View: ui.Rect, Block: ui.Vec2, LineHeight: f32) -> ui.Vec2 {
-	// The view moves this many lines per second one line past the edge, growing with the distance
-	// until AUTOSCROLL_REACH lines.
-	AUTOSCROLL :: f32(10)
-	AUTOSCROLL_REACH :: f32(4)
+autoscroll :: proc(Element: ui.ElementId, Offset: ui.Vec2, View: ui.Rect, Block: ui.Vec2) -> ui.Vec2 {
+	// The view moves at least AUTOSCROLL_MIN and at most AUTOSCROLL_MAX pixels per second, and the
+	// pointer's distance past the edge sets the speed in between.
+	AUTOSCROLL_MIN :: f32(300)
+	AUTOSCROLL_MAX :: f32(6000)
+	AUTOSCROLL_SCALE :: f32(24)
 
-	if LineHeight <= 0 || View.w <= 0 || View.h <= 0 do return Offset
+	if View.w <= 0 || View.h <= 0 do return Offset
 
 	pos := ui.MousePos()
 	over := ui.Vec2{
@@ -370,13 +371,12 @@ autoscroll :: proc(Element: ui.ElementId, Offset: ui.Vec2, View: ui.Rect, Block:
 	if over == 0 do return Offset
 
 	next := Offset
-	step := LineHeight * AUTOSCROLL * ui.DeltaTime()
 	if over.x != 0 {
-		speed := step * clamp(abs(over.x) / LineHeight, 1, AUTOSCROLL_REACH)
+		speed := clamp(abs(over.x) * AUTOSCROLL_SCALE, AUTOSCROLL_MIN, AUTOSCROLL_MAX) * ui.DeltaTime()
 		next.x += (-speed if over.x < 0 else speed)
 	}
 	if over.y != 0 {
-		speed := step * clamp(abs(over.y) / LineHeight, 1, AUTOSCROLL_REACH)
+		speed := clamp(abs(over.y) * AUTOSCROLL_SCALE, AUTOSCROLL_MIN, AUTOSCROLL_MAX) * ui.DeltaTime()
 		next.y += (-speed if over.y < 0 else speed)
 	}
 

@@ -66,7 +66,7 @@ TextInput :: proc(
 			offset := ui.ScrollOffset(element)
 			if ui.MousePressed(.Left) do edit.Selecting = ui.Pressed(element)
 			if ui.Pressed(element) && edit.Selecting && view.w > 0 && view.h > 0 {
-				if ui.MouseDown(.Left) && !ui.MousePressed(.Left) do offset = autoscroll(element, offset, view, block, lh)
+				if ui.MouseDown(.Left) && !ui.MousePressed(.Left) do offset = autoscroll(element, offset, view, block)
 				at := offset_at(display, lines, ui.MousePos() - ui.Vec2{view.x, view.y} + offset, style.Font, style.FontSize, lh)
 				if mask_size > 0 do at = len(rune_prefix(string(Text^[:]), at / mask_size))
 				move_caret(edit, at, !ui.MousePressed(.Left) || ui.ModifierDown(.Shift))

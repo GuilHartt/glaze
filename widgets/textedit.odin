@@ -79,7 +79,7 @@ TextEdit :: proc(
 			if ui.MousePressed(.Left) do edit.Selecting = ui.Pressed(element) && over_text(view, ui.MousePos(), !Wrap)
 			if ui.Pressed(element) && edit.Selecting {
 				offset := ui.ScrollOffset(element)
-				if ui.MouseDown(.Left) && !ui.MousePressed(.Left) do offset = autoscroll(element, offset, view, block, lh)
+				if ui.MouseDown(.Left) && !ui.MousePressed(.Left) do offset = autoscroll(element, offset, view, block)
 
 				// The drag maps inside the view, so the caret stays on the edge line while the
 				// view scrolls under the pointer.
@@ -316,6 +316,7 @@ draw_text_edit :: proc(Rect: ui.Rect, Element: ui.ElementId, User: rawptr) {
 				x1 := Rect.x + ui.MeasureText(visual.Text[int(line.Start):to], visual.Font, visual.Size).x
 				ui.AddRectFilled({x0, Rect.y + f32(i) * lh, x1 - x0, lh}, visual.SelectColor)
 			}
+			ui.PopAntialias()
 		}
 
 		for i in first ..< last {
