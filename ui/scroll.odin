@@ -64,7 +64,7 @@ EnsureVisible :: proc(Element: ElementId = 0) {
 
 		n := &state.nodes[i]
 		if scrolls(n, .Vertical) || scrolls(n, .Horizontal) {
-			inner := inner_rect(i, n.rect)
+			inner := inner_rect(n, n.rect, n.strips)
 			offset := ScrollOffset(n.id)
 			next := offset
 			limit := scroll_limit(n, inner)
@@ -190,16 +190,17 @@ Scrollbar :: struct {
 	window: f32,
 }
 
-// scrollbar computes the bar of node `i` on `Axis`, or reports that the axis has no bar.
-// When the content fits the thumb fills the track, since the bar reserved its strip.
+// scrollbar computes the bar of node `i` on `Axis`, or reports that the axis has no bar. When the
+// content fits, a bar whose strip is reserved stays hidden.
 @(private)
 scrollbar :: proc(i: u32, Axis: ScrollAxis) -> (bar: Scrollbar, ok: bool) #no_bounds_check {
 	n := &state.nodes[i]
 	content := n.content_size
 	if Axis not_in n.strips do return
+	if !shows_bar(n, Axis, content) do return
 
 	vertical := Axis == .Vertical
-	view := inner_rect(i, n.rect)
+	view := inner_rect(n, n.rect, n.strips)
 	bar.span = content.y if vertical else content.x
 	bar.window = view.h if vertical else view.w
 	if bar.span <= 0 || bar.window <= 0 do return
@@ -299,14 +300,14 @@ scroll_update :: proc() {
 
 	remaining := wheel * STEP
 	pos := MousePos()
-	#reverse for &n, i in state.nodes {
+	#reverse for &n in state.nodes {
 		if remaining == 0 do break
 		if !scrolls(&n, .Vertical) && !scrolls(&n, .Horizontal) do continue
 		if !Hovered(n.id) do continue
 		if !pointer_on(&n, pos) do continue
 
 		offset := ScrollOffset(n.id)
-		limit := scroll_limit(&n, inner_rect(u32(i), n.rect))
+		limit := scroll_limit(&n, inner_rect(&n, n.rect, n.strips))
 		next := offset
 		if scrolls(&n, .Vertical) {
 			next.y = clamp(offset.y - remaining.y, 0, limit.y)
@@ -314,6 +315,8 @@ scroll_update :: proc() {
 		if scrolls(&n, .Horizontal) {
 			next.x = clamp(offset.x - remaining.x, 0, limit.x)
 		}
+		if next == offset do continue
+
 		remaining -= offset - next
 		SetScroll(next, n.id)
 	}

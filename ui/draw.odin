@@ -782,14 +782,14 @@ draw_node :: proc(i: u32) #no_bounds_check {
 	n.clip = list.clip
 
 	clip := n.config.Clip || scrolls(n, .Vertical) || scrolls(n, .Horizontal)
-	if clip do PushClipRect(inner_rect(i, n.rect))
+	if clip do PushClipRect(inner_rect(n, n.rect, n.strips))
 
 	switch &content in n.content {
 	case TextContent: {
 		text_lines := content.lines
 		if len(text_lines) == 0 do break
 
-		inner := inner_rect(i, n.rect)
+		inner := inner_rect(n, n.rect, n.strips)
 		painted := Rect{inner.x, inner.y, max(inner.w, n.content_size.x), max(inner.h, n.content_size.y)}
 		if !RectOverlaps(painted, list.clip) do break
 
@@ -846,7 +846,7 @@ draw_node :: proc(i: u32) #no_bounds_check {
 		}
 	}
 	case ImageContent: {
-		inner := inner_rect(i, n.rect)
+		inner := inner_rect(n, n.rect, n.strips)
 		if !RectOverlaps(inner, list.clip) do break
 
 		rect, uv0, uv1 := fit_image(inner, {content.handle.Width, content.handle.Height}, content.fit)
@@ -884,5 +884,9 @@ draw_scrollbar :: proc(i: u32) #no_bounds_check {
 		ends := Corners(min(bar.track.w, bar.track.h) / 2)
 		AddRectFilled(bar.track, TRACK, ends)
 		AddRectFilled(bar.thumb, THUMB, ends)
+
+		// The bar belongs to the layout, not to the content under it, so it takes the pointer back
+		// to the neutral shape a widget may have asked for.
+		if RectContains(bar.track, MousePos()) do SetCursor(.Arrow)
 	}
 }

@@ -281,6 +281,20 @@ ElementRect :: proc(Element: ElementId = 0) -> Rect {
 	return {}
 }
 
+// InnerRect returns the rect inside the padding, the border and the scroll strips of `Element`, as
+// the last finished layout placed it. An `Element` of 0 targets the last element declared.
+InnerRect :: proc(Element: ElementId = 0) -> Rect {
+	target := target_id(Element)
+	i := node_of(target)
+	if i == NO_NODE do return {}
+
+	n := &state.nodes[i]
+	strips: bit_set[ScrollAxis]
+	if strip_reserved(n, .Vertical) do strips += {.Vertical}
+	if strip_reserved(n, .Horizontal) do strips += {.Horizontal}
+	return inner_rect(n, ElementRect(target), strips)
+}
+
 // PushId opens a new id scope, so the elements inside derive their ids from a fresh seed
 // instead of the enclosing element. A `Seed` of 0 derives the scope from the parent and the
 // position; any other `Seed` keeps it stable when a list is reordered. Close it with PopId.

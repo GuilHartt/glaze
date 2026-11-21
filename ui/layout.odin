@@ -321,12 +321,11 @@ resolve_flex :: proc(items: []Flex, free: f32) {
 	}
 }
 
-// inner_rect returns the rect left inside a node after its padding and border, never smaller
-// than zero. The padding already carries the strips of the bars it draws.
+// inner_rect returns the rect left inside `n` after its padding, its border and the strips of the
+// bars in `strips`, never smaller than zero.
 @(private)
-inner_rect :: proc(i: u32, rect: Rect) -> Rect #no_bounds_check {
-	n := &state.nodes[i]
-	p := padding(n, n.strips)
+inner_rect :: proc(n: ^Node, rect: Rect, strips: bit_set[ScrollAxis]) -> Rect {
+	p := padding(n, strips)
 	b := n.style.BorderWidth
 	return {
 		rect.x + p.Left + b.Left,
@@ -499,7 +498,7 @@ arrange :: proc(i: u32, parent: u32) #no_bounds_check {
 	if scroll_mode(n, .Vertical) == .Auto || scroll_mode(n, .Horizontal) == .Auto {
 		Storage(n.id, bit_set[ScrollAxis])^ = strips(n, n.content_size)
 	}
-	arrange_children(i, inner_rect(i, n.rect))
+	arrange_children(i, inner_rect(n, n.rect, n.strips))
 }
 
 // arrange_children sizes the children of node i along its main axis, where a Column
