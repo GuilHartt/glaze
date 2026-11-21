@@ -40,6 +40,38 @@ MergeFont :: proc(Base, Fallback: Font) -> bool {
 	return fontstash.AddFallbackFont(&font_ctx, int(Base), int(Fallback))
 }
 
+// TAB_SIZE is how many spaces a tab takes when text is measured and painted.
+@(private)
+TAB_SIZE :: 4
+
+// tabbed is the scratch a tab expansion writes into, so the next one reuses its capacity.
+@(private="file") tabbed: [dynamic]u8
+
+// tab_text returns `Text` with every tab expanded to TAB_SIZE spaces, or `Text` itself when it has
+// none, so measuring and painting agree on a tab. The result lasts until the next call.
+@(private)
+tab_text :: proc(Text: string) -> string {
+	found := false
+	for i in 0 ..< len(Text) {
+		if Text[i] == '\t' {
+			found = true
+			break
+		}
+	}
+	if !found do return Text
+
+	clear(&tabbed)
+	reserve(&tabbed, len(Text))
+	for i in 0 ..< len(Text) {
+		if Text[i] == '\t' {
+			for _ in 0 ..< TAB_SIZE do append(&tabbed, ' ')
+		} else {
+			append(&tabbed, Text[i])
+		}
+	}
+	return string(tabbed[:])
+}
+
 // MeasureText returns the size `Text` occupies in `Font` at `Size`, in layout units: the
 // advance width and the line height. It takes a slice, so a prefix of a longer string measures
 // without a copy; a `cstring` converts with `string(c)`.
@@ -50,7 +82,7 @@ MeasureText :: proc(Text: string, Font: Font, Size: f32) -> Vec2 {
 	fontstash.SetFont(&font_ctx, int(Font))
 	fontstash.SetSize(&font_ctx, Size * scale)
 
-	advance := fontstash.TextBounds(&font_ctx, Text)
+	advance := fontstash.TextBounds(&font_ctx, tab_text(Text))
 	_, _, line_height := fontstash.VerticalMetrics(&font_ctx)
 
 	return {advance / scale, line_height / scale}
@@ -321,7 +353,7 @@ wrap_paragraph :: proc(P: string, Offset: int, MaxWidth, Space: f32, Scale: f32,
 // measure returns the width `Text` takes. It measures the slice itself, since fontstash
 // reads a length and not a terminator.
 @(private="file")
-measure :: proc(Text: string) -> f32 { return fontstash.TextBounds(&font_ctx, Text) }
+measure :: proc(Text: string) -> f32 { return fontstash.TextBounds(&font_ctx, tab_text(Text)) }
 
 // font_ctx is the shared glyph atlas. Every font rasterizes into it, which is what lets text
 // and shapes share one texture.

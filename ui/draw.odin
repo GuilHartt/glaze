@@ -145,7 +145,7 @@ add_text_run :: proc(List: ^DrawList, Pos: Vec2, Run: string, Tint: Color, Font:
 	previous := List.texture
 	List.texture = atlas_texture
 
-	iter := fontstash.TextIterInit(&font_ctx, Pos.x * scale, Pos.y * scale, Run)
+	iter := fontstash.TextIterInit(&font_ctx, Pos.x * scale, Pos.y * scale, tab_text(Run))
 	quad: fontstash.Quad
 	pen: f32
 	for fontstash.TextIterNext(&font_ctx, &iter, &quad) {
@@ -816,7 +816,10 @@ draw_node :: proc(i: u32) #no_bounds_check {
 				if !line.Truncated && line.Width < inner.w && line.End < u32(len(source)) && source[line.End] != '\n' {
 					spaces := 0
 					for c in source[line.Start:line.End] {
-						if c == ' ' do spaces += 1
+						switch c {
+						case ' ':  spaces += 1
+						case '\t': spaces += TAB_SIZE
+						}
 					}
 					if spaces > 0 {
 						extra = (inner.w - line.Width) / f32(spaces)
