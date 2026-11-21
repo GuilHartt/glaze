@@ -13,9 +13,9 @@ CornerRadius :: struct {
 // Gradient holds four corner colors: top left, top right, bottom right, bottom left.
 Gradient :: [4]Color
 
-// Background is how a box fills its rect: one flat color, or a gradient. Any corner radius
-// survives, since the gradient samples the position inside the rect, not the corners.
-Background :: union {
+// Background is how a box fills its rect: one flat color, or a gradient. The zero value is a
+// transparent color, so a box with no background declares none.
+Background :: union #no_nil {
 	Color,
 	Gradient,
 }

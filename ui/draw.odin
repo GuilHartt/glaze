@@ -189,7 +189,7 @@ AddRectStroke :: proc(Rect: Rect, Tint: Color, Thickness: f32 = 1, CornerRadius:
 }
 
 // AddRectGradient appends a rectangle fading across its four corner colors.
-AddRectGradient :: proc(Rect: Rect, Colors: Gradient, CornerRadius: CornerRadius = {}) {
+AddRectGradient :: proc(Rect: Rect, #no_broadcast Colors: Gradient, CornerRadius: CornerRadius = {}) {
 	path_rect(&list, Rect, CornerRadius, Colors[0])
 	path_gradient(&list, Rect, Colors)
 	path_fill_convex(&list)
@@ -197,7 +197,7 @@ AddRectGradient :: proc(Rect: Rect, Colors: Gradient, CornerRadius: CornerRadius
 
 // AddCircleGradient appends a filled circle fading across `Colors`, sampled over the box
 // that encloses it.
-AddCircleGradient :: proc(Center: Vec2, Radius: f32, Colors: Gradient, Segments: int = 0) {
+AddCircleGradient :: proc(Center: Vec2, Radius: f32, #no_broadcast Colors: Gradient, Segments: int = 0) {
 	path_arc_to(&list, Center, Radius, 0, math.TAU, Colors[0], Segments)
 	path_gradient(&list, {Center.x - Radius, Center.y - Radius, Radius * 2, Radius * 2}, Colors)
 	path_fill_convex(&list)
@@ -205,7 +205,7 @@ AddCircleGradient :: proc(Center: Vec2, Radius: f32, Colors: Gradient, Segments:
 
 // AddTriangleGradient appends a filled triangle fading across `Colors`, sampled over the box
 // that encloses its three points.
-AddTriangleGradient :: proc(A, B, C: Vec2, Colors: Gradient) {
+AddTriangleGradient :: proc(A, B, C: Vec2, #no_broadcast Colors: Gradient) {
 	path_line_to(&list, A, Colors[0])
 	path_line_to(&list, B, Colors[0])
 	path_line_to(&list, C, Colors[0])
@@ -216,7 +216,7 @@ AddTriangleGradient :: proc(A, B, C: Vec2, Colors: Gradient) {
 
 // AddPolygonGradient appends a filled convex polygon fading across `Colors`, sampled over the
 // box that encloses its points.
-AddPolygonGradient :: proc(Points: []Vec2, Colors: Gradient) {
+AddPolygonGradient :: proc(Points: []Vec2, #no_broadcast Colors: Gradient) {
 	for p in Points do path_line_to(&list, p, Colors[0])
 	path_gradient(&list, points_box(Points), Colors)
 	path_fill_convex(&list)
@@ -224,7 +224,7 @@ AddPolygonGradient :: proc(Points: []Vec2, Colors: Gradient) {
 
 // AddRegularPolygonGradient appends a filled regular polygon with `Sides` sides, fading across
 // `Colors` over the box that encloses it.
-AddRegularPolygonGradient :: proc(Center: Vec2, Sides: int, Radius: f32, Colors: Gradient, Start: f32 = 0) {
+AddRegularPolygonGradient :: proc(Center: Vec2, Sides: int, Radius: f32, #no_broadcast Colors: Gradient, Start: f32 = 0) {
 	points: [MAX_POLYGON_SIDES]Vec2
 	p := regular_polygon(points[:], Sides, Center, Radius, Start)
 	if len(p) == 0 do return
@@ -330,7 +330,7 @@ AddImage :: proc(
 AddImageGradient :: proc(
 	Rect:    Rect,
 	Texture: Texture,
-	Colors:  Gradient,
+	#no_broadcast Colors: Gradient,
 	UV0:     Vec2 = {0, 0},
 	UV1:     Vec2 = {1, 1},
 ) {
@@ -855,7 +855,12 @@ draw_node :: proc(i: u32) #no_bounds_check {
 	case CustomContent: {
 		if visible {
 			user: rawptr
-			if content.Size > 0 do user = rawptr(&state.user_data[content.Offset])
+			if content.Size > 0 {
+				// The offset is arithmetic on a byte buffer, so this access keeps its check.
+				#bounds_check {
+					user = rawptr(&state.user_data[content.Offset])
+				}
+			}
 			content.Fn(n.rect, n.id, user)
 		}
 	}

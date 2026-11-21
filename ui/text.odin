@@ -222,7 +222,7 @@ cached_label :: proc(Content: TextContent, Width: f32) -> ^LabelCache {
 label_purge :: proc() {
 	clear(&stale)
 	for key, cached in label_cache {
-		if cached.frame != state.frame do append(&stale, key)
+		if cached.frame + 1 < state.frame do append(&stale, key)
 	}
 	for key in stale {
 		if cached, ok := label_cache[key]; ok do delete(cached.lines)

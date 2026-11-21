@@ -32,21 +32,12 @@ ContainerConfig :: struct {
 // NO_NODE marks a scope that carries no node, which is what PushId opens.
 @(private) NO_NODE :: max(u32)
 
-// Scope is one level of the id stack: the seed new ids derive from, how many elements have
-// already been opened inside it, and the node it belongs to, which is NO_NODE for a PushId.
+// Scope is one level of the id stack: the seed new ids derive from and the node it belongs to,
+// which is NO_NODE for a PushId.
 @(private)
 Scope :: struct {
-	id:    ElementId,
-	count: u32,
-	node:  u32,
-}
-
-// StorageKey identifies one stored value: the id it belongs to and its type. One element can
-// keep several values at once, as long as their types differ.
-@(private="file")
-StorageKey :: struct {
 	id:   ElementId,
-	type: typeid,
+	node: u32,
 }
 
 // ErrorProc receives a message when the library detects a misuse it can recover from, such as
@@ -110,7 +101,7 @@ State :: struct {
 	drag:        ScrollDrag,
 	drag_drop:   DragDrop,
 	cursor:      CursorIcon,
-	storage:     map[StorageKey]rawptr,
+	storage:     StorageTable,
 	prev:        [dynamic]Placement,
 	published:   u32,
 	nodes:       [dynamic]Node,
@@ -170,22 +161,10 @@ FrameCount :: proc() -> u32 {
 	return state.frame
 }
 
-// Storage returns the `T` stored under `Element`, allocating a zero value the first time that id
-// asks for that type. Widgets keep their state here, keyed by their own id, and one element
-// may hold as many types as it needs.
-Storage :: proc(Element: ElementId, $T: typeid) -> ^T {
-	key := StorageKey{id = Element, type = T}
-	if ptr, ok := state.storage[key]; ok do return (^T)(ptr)
-
-	ptr := new(T)
-	state.storage[key] = ptr
-	return ptr
-}
-
-
 // Begin starts a new frame: it feeds the input, clears the node array and opens an implicit
 // root node sized to the viewport. Must be paired with End.
 Begin :: proc() {
+	state.frame += 1
 	event_begin()
 	scrollbar_update()
 	focus_begin()
@@ -195,7 +174,7 @@ Begin :: proc() {
 	clear(&state.floats)
 	clear(&state.user_data)
 	label_purge()
-	state.frame += 1
+	storage_purge()
 	state.cursor = .Arrow
 	append(&state.scopes, Scope{id = ROOT_SEED, node = NO_NODE})
 	size := viewport_size()
@@ -218,12 +197,11 @@ End :: proc() {
 }
 
 // Open opens a new node and makes it the parent of everything declared until the matching
-// Close, with an id derived from its parent and position. Prefer Row/Column for the common
+// Close, with an id derived from its parent and the call site. Prefer Row/Column for the common
 // cases.
-Open :: proc(Config: ContainerConfig = {}, Style: BoxStyle = {}, Direction: Direction = .Row) -> ElementId {
+Open :: proc(Config: ContainerConfig = {}, Style: BoxStyle = {}, Direction: Direction = .Row, loc := #caller_location) -> ElementId {
 	parent := &state.scopes[len(state.scopes)-1]
-	node_id := id_mix(parent.id, parent.count)
-	parent.count += 1
+	node_id := id_mix(parent.id, site_id(loc))
 
 	idx := u32(len(state.nodes))
 	append(&state.nodes, Node{id = node_id, config = Config, style = Style, direction = Direction})
@@ -295,14 +273,12 @@ InnerRect :: proc(Element: ElementId = 0) -> Rect {
 	return inner_rect(n, ElementRect(target), strips)
 }
 
-// PushId opens a new id scope, so the elements inside derive their ids from a fresh seed
-// instead of the enclosing element. A `Seed` of 0 derives the scope from the parent and the
-// position; any other `Seed` keeps it stable when a list is reordered. Close it with PopId.
-PushId :: proc(Seed: u32 = 0) {
+// PushId opens a new id scope, so the elements inside derive their ids from a fresh seed instead of
+// the enclosing element. A `Seed` of 0 uses the call site, and a loop must pass one. PopId closes it.
+PushId :: proc(Seed: u32 = 0, loc := #caller_location) {
 	parent := &state.scopes[len(state.scopes)-1]
-	seed := Seed if Seed != 0 else parent.count
+	seed := Seed if Seed != 0 else site_id(loc)
 	append(&state.scopes, Scope{id = id_mix(parent.id, seed), node = NO_NODE})
-	if Seed == 0 do parent.count += 1
 }
 
 // PopId closes the scope opened by PushId.
@@ -317,16 +293,16 @@ PopId :: proc() {
 // Row opens a node that lays its children out left to right, as `if Row(...) { ... }`. The
 // node closes at the end of the block.
 @(require_results, deferred_none = Close)
-Row :: proc(Config: ContainerConfig = {}, Style: BoxStyle = {}) -> bool {
-	Open(Config, Style, .Row)
+Row :: proc(Config: ContainerConfig = {}, Style: BoxStyle = {}, loc := #caller_location) -> bool {
+	Open(Config, Style, .Row, loc)
 	return true
 }
 
 // Column opens a node that lays its children out top to bottom, as `if Column(...) { ... }`.
 // The node closes at the end of the block.
 @(require_results, deferred_none = Close)
-Column :: proc(Config: ContainerConfig = {}, Style: BoxStyle = {}) -> bool {
-	Open(Config, Style, .Column)
+Column :: proc(Config: ContainerConfig = {}, Style: BoxStyle = {}, loc := #caller_location) -> bool {
+	Open(Config, Style, .Column, loc)
 	return true
 }
 
@@ -339,8 +315,8 @@ AnchorKind :: enum u8 {
 }
 
 // Anchor is what a floating node is placed against: an element id, or an `AnchorKind` for the
-// element it was declared in, the viewport, or the pointer.
-Anchor :: union {
+// element it was declared in, the viewport, or the pointer. Id 0, the zero value, is the viewport.
+Anchor :: union #no_nil {
 	ElementId,
 	AnchorKind,
 }
@@ -376,9 +352,10 @@ Floating :: proc(
 	Config:    ContainerConfig = {},
 	Style:     BoxStyle = {},
 	Direction: Direction = .Column,
+	loc := #caller_location,
 ) -> bool #no_bounds_check {
 	parent := current_parent()
-	Open(Config, Style, Direction)
+	Open(Config, Style, Direction, loc)
 	state.nodes[len(state.nodes) - 1].floating = true
 	append(&state.floats, Float{
 		node   = u32(len(state.nodes) - 1),
@@ -392,8 +369,8 @@ Floating :: proc(
 
 // Label adds a text leaf and returns its id, so it can be the target of Hovered/Clicked. `Config`
 // is the box, and `Style` paints it and the text inside.
-Label :: proc(Text: string, Config: ElementConfig = {}, Style: LabelStyle = {}) -> ElementId #no_bounds_check {
-	node_id := Open({base = Config}, Style.Box)
+Label :: proc(Text: string, Config: ElementConfig = {}, Style: LabelStyle = {}, loc := #caller_location) -> ElementId #no_bounds_check {
+	node_id := Open({base = Config}, Style.Box, loc = loc)
 	state.nodes[len(state.nodes)-1].content = TextContent{
 		text      = Text,
 		font      = Style.Font,
@@ -411,8 +388,8 @@ Label :: proc(Text: string, Config: ElementConfig = {}, Style: LabelStyle = {}) 
 
 // Image adds an image leaf and returns its id. `Config` is the box, defaulting to the texture
 // size, and `Style` paints the box and the texture.
-Image :: proc(Handle: Texture, Config: ElementConfig = {}, Style: ImageStyle = {}) -> ElementId #no_bounds_check {
-	node_id := Open({base = Config}, Style.Box)
+Image :: proc(Handle: Texture, Config: ElementConfig = {}, Style: ImageStyle = {}, loc := #caller_location) -> ElementId #no_bounds_check {
+	node_id := Open({base = Config}, Style.Box, loc = loc)
 	state.nodes[len(state.nodes)-1].content = ImageContent{
 		handle = Handle,
 		tint   = Style.Tint.? or_else {255, 255, 255, 255},
@@ -430,12 +407,13 @@ Custom :: proc(
 	Config: ElementConfig = {Width = {Kind = .Fixed, Grow = 1}, Height = {Kind = .Fixed, Grow = 1}},
 	Style:  BoxStyle = {},
 	User:   any = nil,
+	loc := #caller_location,
 ) -> ElementId #no_bounds_check {
 	// The buffer is a byte stream, so every value starts on the boundary the allocator already
 	// guarantees for the buffer itself.
 	ALIGN :: 16
 
-	node_id := Open({base = Config}, Style)
+	node_id := Open({base = Config}, Style, loc = loc)
 	content := CustomContent{Fn = Fn}
 
 	if User != nil {
@@ -457,6 +435,15 @@ Custom :: proc(
 // The root of every frame's id tree; ids derive from it down the hierarchy.
 @(private="file")
 ROOT_SEED :: ElementId(0x9e3779b9)
+
+// site_id folds a call site into the id space: the file, the line and the column. The file enters
+// by the address of its path, so two files that share a line still differ.
+@(private="file")
+site_id :: #force_inline proc "contextless" (loc: runtime.Source_Code_Location) -> u32 {
+	h := u32(uintptr(raw_data(loc.file_path))) ~ u32(loc.line) * 0x9E3779B1 ~ u32(loc.column) * 0x85EBCA77
+	if h == 0 do h = 1
+	return h
+}
 
 // id_mix folds `n` into `seed` to derive a child's id. It is a 32-bit avalanche hash, so
 // neighbouring positions land far apart, and never returns 0 (0 means the last element).
